@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment — real keys must never be committed
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+
+# Editor & OS
+.DS_Store
+.vscode/settings.json
+*.swp
+
+# Claude Code internal files
+skills-lock.json
+
+# Convex generated files are committed so new cloners can type-check immediately.
+# Delete this comment and uncomment the line below if you'd rather regenerate on clone.
+# convex/_generated/
