@@ -1,0 +1,6 @@
+# Convex compiles .ts itself — do not commit the output
+*.js
+*.js.map
+# But keep the generated runtime shims
+!_generated/*.js
+!_generated/*.js.map
