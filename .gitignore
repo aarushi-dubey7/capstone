@@ -16,6 +16,7 @@ dist/
 
 # Claude Code internal files
 skills-lock.json
+.claude/
 
 # Convex generated files are committed so new cloners can type-check immediately.
 # Delete this comment and uncomment the line below if you'd rather regenerate on clone.

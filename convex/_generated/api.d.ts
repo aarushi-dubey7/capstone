@@ -14,6 +14,7 @@ import type * as locations from "../locations.js";
 import type * as scheduleRotation from "../scheduleRotation.js";
 import type * as schedules from "../schedules.js";
 import type * as students from "../students.js";
+import type * as weekDayMapping from "../weekDayMapping.js";
 
 import type {
   ApiFromModules,
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   scheduleRotation: typeof scheduleRotation;
   schedules: typeof schedules;
   students: typeof students;
+  weekDayMapping: typeof weekDayMapping;
 }>;
 
 /**
