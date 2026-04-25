@@ -11,6 +11,7 @@
 import type * as attendance from "../attendance.js";
 import type * as groq from "../groq.js";
 import type * as locations from "../locations.js";
+import type * as scheduleRotation from "../scheduleRotation.js";
 import type * as schedules from "../schedules.js";
 import type * as students from "../students.js";
 
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   attendance: typeof attendance;
   groq: typeof groq;
   locations: typeof locations;
+  scheduleRotation: typeof scheduleRotation;
   schedules: typeof schedules;
   students: typeof students;
 }>;

@@ -13,10 +13,17 @@ export default defineSchema({
 
   // Each ESP32 beacon maps to one location
   locations: defineTable({
-    name: v.string(),       // "Room C2"
-    roomNumber: v.string(), // "C2"
-    uuid: v.string(),       // "000000C2-0000-1000-8000-00805f9b34fb"
+    name: v.string(),                  // "Room C2"
+    roomNumber: v.string(),            // "C2"
+    uuid: v.string(),                  // "000000C2-0000-1000-8000-00805f9b34fb"
+    deviceName: v.optional(v.string()), // BLE advertised name, e.g. "Attendance-Anchor-101"
   }).index("by_uuid", ["uuid"]),
+
+  // School-wide day rotation: records which schedule day label a given date maps to
+  scheduleRotation: defineTable({
+    date: v.string(),     // "2026-04-25"
+    dayLabel: v.string(), // matches day_of_week values in schedules, e.g. "Day 1"
+  }).index("by_date", ["date"]),
 
   // Groq-parsed schedule entries per student
   schedules: defineTable({

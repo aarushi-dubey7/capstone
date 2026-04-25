@@ -48,28 +48,47 @@ export default function StudentPortal() {
       setState("scanning");
       setMessage("Scanning for room beacon…");
 
-      // Build a filter for each registered location UUID
-      const filters: BluetoothLEScanFilter[] = locations.map((loc) => ({
-        services: [loc.uuid.toLowerCase()],
-      }));
+      // Known beacon device names from the database
+      const knownNames = locations
+        .map((loc) => loc.deviceName)
+        .filter((n): n is string => !!n);
 
-      const device = await navigator.bluetooth.requestDevice(
-        filters.length > 0
-          ? ({ filters } as RequestDeviceOptions)
-          : { acceptAllDevices: true }
-      );
+      let device: BluetoothDevice | null = null;
 
-      setMessage("Room detected! Logging attendance…");
+      // 1. Try previously-granted devices first — no picker, no user gesture needed
+      if ("getDevices" in navigator.bluetooth) {
+        const granted = await (navigator.bluetooth as unknown as { getDevices(): Promise<BluetoothDevice[]> }).getDevices();
+        device = granted.find((d) =>
+          knownNames.some((name) => d.name === name)
+        ) ?? null;
+        if (device) setMessage("Beacon found! Logging attendance…");
+      }
 
-      // Match device name back to a location record
+      // 2. First-time: show picker filtered to known beacon names so user grants once
+      if (!device) {
+        const nameFilters: BluetoothLEScanFilter[] = knownNames.map((name) => ({ name }));
+        const uuidFilters: BluetoothLEScanFilter[] = locations.map((loc) => ({
+          services: [loc.uuid.toLowerCase()],
+        }));
+        const filters = nameFilters.length > 0 ? nameFilters : uuidFilters;
+        device = await navigator.bluetooth.requestDevice(
+          filters.length > 0
+            ? ({ filters } as RequestDeviceOptions)
+            : { acceptAllDevices: true }
+        );
+        setMessage("Room detected! Logging attendance…");
+      }
+
+      // Match device back to a location record
       const matched = locations.find(
         (loc) =>
-          device.name?.toLowerCase().includes(loc.roomNumber.toLowerCase()) ||
-          device.name === loc.name
+          (loc.deviceName && device!.name === loc.deviceName) ||
+          device!.name?.toLowerCase().includes(loc.roomNumber.toLowerCase()) ||
+          device!.name === loc.name
       );
 
       const locationUuid = matched?.uuid ?? "unknown";
-      const locationName = matched?.name ?? device.name ?? "Unknown Room";
+      const locationName = matched?.name ?? device!.name ?? "Unknown Room";
 
       const result = await markPresent({
         studentId: student._id as Id<"students">,

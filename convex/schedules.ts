@@ -34,3 +34,10 @@ export const getForStudent = query({
       .collect();
   },
 });
+
+export const listAll = query({
+  args: {},
+  handler: async (ctx) => {
+    return ctx.db.query("schedules").collect();
+  },
+});

@@ -6,6 +6,7 @@ export const upsert = mutation({
     name: v.string(),
     roomNumber: v.string(),
     uuid: v.string(),
+    deviceName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db

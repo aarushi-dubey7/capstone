@@ -21,7 +21,7 @@ export const parseScheduleImage = action({
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "llama-3.2-90b-vision-preview",
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
         messages: [
           {
             role: "user",
@@ -48,7 +48,7 @@ Ignore specific dates, teacher names, and district codes.`,
             ],
           },
         ],
-        max_tokens: 2048,
+        max_tokens: 8192,
       }),
     });
 
@@ -57,7 +57,10 @@ Ignore specific dates, teacher names, and district codes.`,
       throw new Error((err as { error?: { message?: string } }).error?.message ?? `Groq error ${res.status}`);
     }
 
-    const data = await res.json() as { choices: { message: { content: string } }[] };
+    const data = await res.json() as { choices: { message: { content: string }; finish_reason: string }[] };
+    if (data.choices[0].finish_reason === "length") {
+      throw new Error("Schedule image produced too much output — try cropping it to just the schedule grid.");
+    }
     const raw = data.choices[0].message.content
       .replace(/```json\n?/g, "")
       .replace(/```\n?/g, "")

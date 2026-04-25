@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -40,10 +40,14 @@ export default function Onboarding() {
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState("");
 
+  // Day rotation
+  const [todayDayLabel, setTodayDayLabel] = useState<string>("");
+
   // Convex
   const [convexId, setConvexId] = useState<Id<"students"> | null>(null);
   const registerStudent = useMutation(api.students.register);
   const saveSchedule = useMutation(api.schedules.save);
+  const setRotation = useMutation(api.scheduleRotation.set);
   const parseImage = useAction(api.groq.parseScheduleImage);
 
   async function handleStep1() {
@@ -54,15 +58,30 @@ export default function Onboarding() {
     setStep(2);
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function applyFile(file: File) {
     setScheduleFile(file);
     setParsedSchedule(null);
     setParseError("");
-    const url = URL.createObjectURL(file);
-    setPreview(url);
+    setPreview(URL.createObjectURL(file));
   }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) applyFile(file);
+  }
+
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    if (step !== 2) return;
+    const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"));
+    if (!item) return;
+    const file = item.getAsFile();
+    if (file) applyFile(file);
+  }, [step]);
+
+  useEffect(() => {
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [handlePaste]);
 
   async function handleParseSchedule() {
     if (!scheduleFile) return;
@@ -91,6 +110,10 @@ export default function Onboarding() {
         room: e.room,
       })),
     });
+    if (todayDayLabel) {
+      const todayDate = new Date().toISOString().split("T")[0];
+      await setRotation({ date: todayDate, dayLabel: todayDayLabel });
+    }
     setStep(3);
   }
 
@@ -173,7 +196,7 @@ export default function Onboarding() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                         d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    <span className="text-sm text-slate-500">Tap to choose image</span>
+                    <span className="text-sm text-slate-500">Tap to choose image, or paste (⌘V)</span>
                   </>
                 )}
                 <input
@@ -226,6 +249,32 @@ export default function Onboarding() {
                       </div>
                     ))}
                   </div>
+                  {(() => {
+                    const dayOptions = [...new Set(parsedSchedule.map((e) => e.day_of_week))].sort();
+                    return (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-slate-700">What day is today?</p>
+                        <div className="flex flex-wrap gap-2">
+                          {dayOptions.map((d) => (
+                            <button
+                              key={d}
+                              onClick={() => setTodayDayLabel(d === todayDayLabel ? "" : d)}
+                              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                                todayDayLabel === d
+                                  ? "bg-brand-700 text-white border-brand-700"
+                                  : "border-slate-300 text-slate-600 hover:border-brand-400"
+                              }`}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                        {!todayDayLabel && (
+                          <p className="text-xs text-slate-400">Skip if your schedule uses weekday names</p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <button onClick={handleStep2} className="btn-primary w-full">
                     Save Schedule
                   </button>
