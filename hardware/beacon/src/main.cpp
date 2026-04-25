@@ -1,3 +1,5 @@
+#include <Arduino.h>
+#include <HardwareSerial.h>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
@@ -6,10 +8,10 @@
 // CONFIGURE CLASSROOM HERE BEFORE FLASHING
 // Replace the UUID prefix with the actual room number to keep it organized
 // ====================================================================
-#define ROOM_NAME "Room-C2-Beacon"
+#define ROOM_NAME "Room-B16-Beacon"
 
 // Example: Using "00C2" in the first block to represent Room C2
-#define ROOM_UUID "000000C2-0000-1000-8000-00805f9b34fb" 
+#define ROOM_UUID "00000B16-0000-1000-8000-00805f9b34fb" 
 // ====================================================================
 
 void setup() {

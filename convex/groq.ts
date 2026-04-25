@@ -38,8 +38,10 @@ For every class block in the grid create an object with:
   - end_time     : end time string (e.g. "09:13 AM")
   - subject      : full class name (e.g. "Health & Physical Education 8")
   - room         : exact room code (e.g. "C2", "104", "Cafe")
-
-Ignore specific dates, teacher names, and district codes.`,
+  - teacher_name : name of the teacher (e.g. "Mr. Smith")
+  - block_label  : Map the time to one of these: "Block 1", "Block 2", "Block 3", "EP 1/Lunch", "EP 2/Lunch", "Block 4", "Block 5", "Block 6"
+ 
+Ignore specific dates and district codes.`,
               },
               {
                 type: "image_url",
@@ -72,6 +74,8 @@ Ignore specific dates, teacher names, and district codes.`,
       end_time: string;
       subject: string;
       room: string;
+      teacher_name: string;
+      block_label: string;
     }[];
   },
 });

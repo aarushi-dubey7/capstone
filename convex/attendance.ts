@@ -42,6 +42,7 @@ export const markPresent = mutation({
       .withIndex("by_date", (q) => q.eq("date", date))
       .first();
     const scheduleDay = rotation?.dayLabel ?? dayOfWeek;
+    const bellType = rotation?.bellScheduleType ?? "Standard";
 
     // Find the schedule entry that matches today + this room
     const schedule = await ctx.db
@@ -55,7 +56,25 @@ export const markPresent = mutation({
       )
       .first();
 
-    const isLate = schedule ? isLateForTime(schedule.startTime) : false;
+    let isLate = false;
+    if (schedule) {
+      let startTime = schedule.startTime;
+      
+      // If we have a block label and a matching bell schedule, use the official start time
+      if (schedule.blockLabel) {
+        const bellSchedule = await ctx.db
+          .query("bellSchedules")
+          .withIndex("by_type", (q) => q.eq("type", bellType))
+          .first();
+        
+        const block = bellSchedule?.blocks.find(b => b.label === schedule.blockLabel);
+        if (block) {
+          startTime = block.start;
+        }
+      }
+      
+      isLate = isLateForTime(startTime);
+    }
 
     await ctx.db.insert("logs", {
       studentId,

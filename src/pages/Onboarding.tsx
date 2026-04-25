@@ -13,6 +13,8 @@ interface ScheduleEntry {
   end_time: string;
   subject: string;
   room: string;
+  teacher_name: string;
+  block_label: string;
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -31,6 +33,8 @@ export default function Onboarding() {
   // Step 1 state
   const [name, setName] = useState("");
   const [studentId, setStudentId] = useState("");
+  const [emailPrefix, setEmailPrefix] = useState("");
+  const [grade, setGrade] = useState("8");
 
   // Step 2 state
   const fileRef = useRef<HTMLInputElement>(null);
@@ -51,8 +55,9 @@ export default function Onboarding() {
   const parseImage = useAction(api.groq.parseScheduleImage);
 
   async function handleStep1() {
-    if (!name.trim() || !studentId.trim()) return;
-    const id = await registerStudent({ name: name.trim(), studentId: studentId.trim(), role: "student" });
+    if (!name.trim() || !studentId.trim() || !emailPrefix.trim()) return;
+    const email = `${emailPrefix.trim().toLowerCase()}@bhpsnj.org`;
+    const id = await registerStudent({ name: name.trim(), studentId: studentId.trim(), email, role: "student", grade });
     setConvexId(id as Id<"students">);
     setStoredStudentId(studentId.trim());
     setStep(2);
@@ -108,6 +113,8 @@ export default function Onboarding() {
         endTime: e.end_time,
         subject: e.subject,
         room: e.room,
+        teacherName: e.teacher_name,
+        blockLabel: e.block_label,
       })),
     });
     if (todayDayLabel) {
@@ -166,9 +173,46 @@ export default function Onboarding() {
                   className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">School Email</label>
+                <div className="flex">
+                  <input
+                    type="text"
+                    value={emailPrefix}
+                    onChange={(e) => setEmailPrefix(e.target.value.replace(/[@\s]/g, ""))}
+                    placeholder="ajohnson"
+                    className="flex-1 border border-slate-300 rounded-l-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500 border-r-0"
+                  />
+                  <span className="inline-flex items-center px-4 py-3 bg-slate-100 border border-slate-300 rounded-r-xl text-sm text-slate-500 font-medium">
+                    @bhpsnj.org
+                  </span>
+                </div>
+                {emailPrefix && (
+                  <p className="text-xs text-slate-400 mt-1">{emailPrefix.toLowerCase()}@bhpsnj.org</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Grade</label>
+                <div className="flex gap-2">
+                  {["6", "7", "8"].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGrade(g)}
+                      className={`flex-1 py-3 rounded-xl text-sm font-semibold border-2 transition-all ${
+                        grade === g
+                          ? "bg-brand-700 text-white border-brand-700 shadow-md"
+                          : "border-slate-300 text-slate-600 hover:border-brand-400"
+                      }`}
+                    >
+                      {g}th Grade
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button
                 onClick={handleStep1}
-                disabled={!name.trim() || !studentId.trim()}
+                disabled={!name.trim() || !studentId.trim() || !emailPrefix.trim()}
                 className="btn-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Continue
@@ -240,7 +284,8 @@ export default function Onboarding() {
                       <div key={i} className="flex items-center justify-between px-4 py-2.5 text-sm">
                         <div>
                           <span className="font-medium text-slate-800">{entry.subject}</span>
-                          <span className="text-slate-400 ml-2">{entry.day_of_week}</span>
+                          {entry.teacher_name && <span className="text-slate-400 text-xs ml-2">({entry.teacher_name})</span>}
+                          <span className="text-slate-400 block text-xs mt-0.5">{entry.day_of_week}</span>
                         </div>
                         <div className="text-right text-slate-500">
                           <div>{entry.start_time} – {entry.end_time}</div>

@@ -7,6 +7,8 @@ const scheduleEntry = v.object({
   endTime: v.string(),
   subject: v.string(),
   room: v.string(),
+  teacherName: v.optional(v.string()),
+  blockLabel: v.optional(v.string()),
 });
 
 export const save = mutation({

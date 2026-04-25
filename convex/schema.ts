@@ -5,10 +5,13 @@ export default defineSchema({
   students: defineTable({
     name: v.string(),
     studentId: v.string(),
+    email: v.optional(v.string()),     // "ajohnson@bhpsnj.org"
     role: v.union(v.literal("student"), v.literal("teacher")),
+    grade: v.optional(v.string()),  // "6", "7", "8"
     createdAt: v.number(),
   })
     .index("by_studentId", ["studentId"])
+    .index("by_email", ["email"])
     .index("by_role", ["role"]),
 
   // Each ESP32 beacon maps to one location
@@ -33,7 +36,18 @@ export default defineSchema({
   scheduleRotation: defineTable({
     date: v.string(),     // "2026-04-25"
     dayLabel: v.string(), // matches day_of_week values in schedules, e.g. "Day 1"
+    bellScheduleType: v.optional(v.string()), // "Standard", "Advisory", "Morning Assembly"
   }).index("by_date", ["date"]),
+
+  // Definitions for different bell schedule timings
+  bellSchedules: defineTable({
+    type: v.string(), // "Standard", "Advisory", "Morning Assembly"
+    blocks: v.array(v.object({
+      label: v.string(), // "Block 1", "Advisory", "Lunch"
+      start: v.string(), // "08:17 AM"
+      end: v.string(),   // "09:13 AM"
+    }))
+  }).index("by_type", ["type"]),
 
   // Groq-parsed schedule entries per student
   schedules: defineTable({
@@ -43,7 +57,19 @@ export default defineSchema({
     endTime: v.string(),    // "09:13 AM"
     subject: v.string(),    // "Health & Physical Education 8"
     room: v.string(),       // "C2"
+    teacherName: v.optional(v.string()), // "Mr. Smith"
+    blockLabel: v.optional(v.string()),  // "Block 1", "EP 1/Lunch", etc.
   }).index("by_student", ["studentId"]),
+
+  // Teacher-managed class definitions (independent of student schedules)
+  classes: defineTable({
+    room: v.string(),              // "B16"
+    subject: v.string(),           // "Social Studies"
+    teacherName: v.string(),       // "Mr. Buonaspina"
+    grade: v.optional(v.string()), // "8" for 8th grade
+    period: v.optional(v.string()),// "Block 3"
+  }).index("by_room", ["room"])
+    .index("by_grade", ["grade"]),
 
   // Every check-in is appended here
   logs: defineTable({
