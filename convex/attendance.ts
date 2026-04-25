@@ -36,13 +36,20 @@ export const markPresent = mutation({
     const date = todayString();
     const dayOfWeek = currentDayOfWeek();
 
+    // Use the school's day rotation label if set, otherwise fall back to weekday name
+    const rotation = await ctx.db
+      .query("scheduleRotation")
+      .withIndex("by_date", (q) => q.eq("date", date))
+      .first();
+    const scheduleDay = rotation?.dayLabel ?? dayOfWeek;
+
     // Find the schedule entry that matches today + this room
     const schedule = await ctx.db
       .query("schedules")
       .withIndex("by_student", (q) => q.eq("studentId", studentId))
       .filter((q) =>
         q.and(
-          q.eq(q.field("dayOfWeek"), dayOfWeek),
+          q.eq(q.field("dayOfWeek"), scheduleDay),
           q.eq(q.field("room"), locationName.replace("Room ", "").trim())
         )
       )

@@ -19,6 +19,16 @@ export default defineSchema({
     deviceName: v.optional(v.string()), // BLE advertised name, e.g. "Attendance-Anchor-101"
   }).index("by_uuid", ["uuid"]),
 
+  // Maps each weekday to a day-number label for the current school week
+  weekDayMapping: defineTable({
+    weekStart: v.string(),              // "2026-04-21" — Monday ISO date
+    monday: v.optional(v.string()),     // "Day 1" | "Day 2" | "Day 3" | "Day 4"
+    tuesday: v.optional(v.string()),
+    wednesday: v.optional(v.string()),
+    thursday: v.optional(v.string()),
+    friday: v.optional(v.string()),
+  }).index("by_weekStart", ["weekStart"]),
+
   // School-wide day rotation: records which schedule day label a given date maps to
   scheduleRotation: defineTable({
     date: v.string(),     // "2026-04-25"
