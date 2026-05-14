@@ -17,3 +17,131 @@
     @apply bg-white rounded-2xl shadow-sm border border-slate-200 p-6;
   }
 }
+
+/* ── Animated Gradient Background ── */
+
+.home-animated-bg {
+  position: relative;
+  overflow: hidden;
+  background-color: #0b1a3e;
+}
+
+/* Static container — no rotation */
+.stripe-gradient {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Shared blob style */
+.stripe-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.6;
+  will-change: transform;
+}
+
+/* ── Individual blobs — large, floating, organic motion ── */
+
+/* Purple — starts top-left, wanders broadly */
+.stripe-blob--purple {
+  width: 60%;
+  height: 60%;
+  top: -15%;
+  left: -15%;
+  background: radial-gradient(circle at center, #7b68ee 0%, #5b3cc4 40%, transparent 70%);
+  animation: floatPurple 25s ease-in-out infinite;
+}
+
+@keyframes floatPurple {
+  0%   { transform: translate(0, 0) scale(1); }
+  15%  { transform: translate(30%, 20%) scale(1.1); }
+  30%  { transform: translate(55%, 10%) scale(0.95); }
+  50%  { transform: translate(40%, 45%) scale(1.08); }
+  70%  { transform: translate(10%, 35%) scale(0.92); }
+  85%  { transform: translate(-5%, 15%) scale(1.05); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* Pink/magenta — starts top-right, floats across */
+.stripe-blob--pink {
+  width: 55%;
+  height: 55%;
+  top: -10%;
+  right: -10%;
+  background: radial-gradient(circle at center, #ff6ec7 0%, #d94f9e 40%, transparent 70%);
+  animation: floatPink 30s ease-in-out infinite;
+}
+
+@keyframes floatPink {
+  0%   { transform: translate(0, 0) scale(1); }
+  15%  { transform: translate(-25%, 30%) scale(1.08); }
+  35%  { transform: translate(-50%, 15%) scale(0.94); }
+  50%  { transform: translate(-35%, 50%) scale(1.12); }
+  65%  { transform: translate(-10%, 40%) scale(0.96); }
+  80%  { transform: translate(-20%, 10%) scale(1.05); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* Orange/amber — starts bottom-right, drifts up and across */
+.stripe-blob--orange {
+  width: 50%;
+  height: 50%;
+  bottom: -10%;
+  right: -8%;
+  background: radial-gradient(circle at center, #ffaa44 0%, #ff8c1a 40%, transparent 70%);
+  animation: floatOrange 28s ease-in-out infinite;
+}
+
+@keyframes floatOrange {
+  0%   { transform: translate(0, 0) scale(1); }
+  20%  { transform: translate(-30%, -25%) scale(1.1); }
+  40%  { transform: translate(-50%, -10%) scale(0.93); }
+  55%  { transform: translate(-25%, -40%) scale(1.06); }
+  75%  { transform: translate(-10%, -20%) scale(0.97); }
+  90%  { transform: translate(-5%, -5%) scale(1.03); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* Teal/cyan — starts bottom-left, floats up-right */
+.stripe-blob--teal {
+  width: 55%;
+  height: 55%;
+  bottom: -10%;
+  left: -10%;
+  background: radial-gradient(circle at center, #36d6c5 0%, #1aafa0 40%, transparent 70%);
+  animation: floatTeal 32s ease-in-out infinite;
+}
+
+@keyframes floatTeal {
+  0%   { transform: translate(0, 0) scale(1); }
+  15%  { transform: translate(25%, -20%) scale(1.07); }
+  30%  { transform: translate(50%, -35%) scale(0.94); }
+  50%  { transform: translate(35%, -15%) scale(1.1); }
+  70%  { transform: translate(15%, -40%) scale(0.96); }
+  85%  { transform: translate(5%, -10%) scale(1.04); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* Deep blue — center, slow roaming undertow */
+.stripe-blob--blue {
+  width: 60%;
+  height: 60%;
+  top: 15%;
+  left: 15%;
+  background: radial-gradient(circle at center, #1e40af 0%, #1d4ed8 30%, transparent 65%);
+  opacity: 0.45;
+  animation: floatBlue 35s ease-in-out infinite;
+}
+
+@keyframes floatBlue {
+  0%   { transform: translate(0, 0) scale(1); }
+  20%  { transform: translate(15%, 20%) scale(1.12); }
+  40%  { transform: translate(-10%, 10%) scale(0.9); }
+  60%  { transform: translate(10%, -15%) scale(1.08); }
+  80%  { transform: translate(-15%, -5%) scale(0.95); }
+  100% { transform: translate(0, 0) scale(1); }
+}

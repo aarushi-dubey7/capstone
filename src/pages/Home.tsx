@@ -61,8 +61,18 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-gradient-to-br from-brand-900 to-brand-700">
-      <div className="text-center mb-12">
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 home-animated-bg">
+      {/* ── Stripe-style rotating gradient ── */}
+      <div className="stripe-gradient">
+        <div className="stripe-blob stripe-blob--purple" />
+        <div className="stripe-blob stripe-blob--pink" />
+        <div className="stripe-blob stripe-blob--orange" />
+        <div className="stripe-blob stripe-blob--teal" />
+        <div className="stripe-blob stripe-blob--blue" />
+      </div>
+
+      {/* ── Content ── */}
+      <div className="text-center mb-12 relative z-10">
         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-white/10 backdrop-blur mb-6">
           <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -75,7 +85,7 @@ export default function Home() {
 
       {/* Login Modal */}
       {showLogin && !storedId && (
-        <div className="w-full max-w-sm mb-6">
+        <div className="w-full max-w-sm mb-6 relative z-10">
           <div className="bg-white rounded-2xl p-6 shadow-2xl space-y-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900">Welcome Back</h2>
@@ -149,7 +159,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className="grid gap-4 w-full max-w-sm">
+      <div className="grid gap-4 w-full max-w-sm relative z-10">
         <button
           onClick={goToStudent}
           className="flex items-center gap-4 bg-white rounded-2xl p-6 shadow-xl hover:shadow-2xl active:scale-95 transition-all text-left"
