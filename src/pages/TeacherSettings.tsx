@@ -28,10 +28,10 @@ function weekStart() {
 
 function todayWeekdayKey(): Weekday {
   const dayIndex = new Date().getDay();
-  if (dayIndex === 0 || dayIndex === 6) {
+  if (dayIndex < 1 || dayIndex > 5) {
     return "monday";
   }
-  return WEEKDAYS[dayIndex - 1] ?? "monday";
+  return WEEKDAYS[dayIndex - 1];
 }
 
 function fmtDateLabel(date: string) {
@@ -93,10 +93,11 @@ export default function TeacherSettings() {
   }, [settings]);
 
   const suggestedRotation = useMemo(() => {
-    const startDate = new Date(`${weekStartLabel}T00:00:00`);
+    const date = new Date(`${weekStartLabel}T00:00:00`);
     return WEEKDAYS.map((_, index) => {
-      const date = new Date(startDate);
-      date.setDate(startDate.getDate() + index);
+      if (index > 0) {
+        date.setDate(date.getDate() + 1);
+      }
       const dateString = formatDateStr(date);
       return {
         date: dateString,
@@ -114,6 +115,14 @@ export default function TeacherSettings() {
       friday: weekMapping?.friday ?? "",
     });
     setEditingWeek(true);
+  }
+
+  function handleToggleWeekEdit() {
+    if (editingWeek) {
+      setEditingWeek(false);
+      return;
+    }
+    openWeekForm();
   }
 
   async function saveWeekSetup() {
@@ -180,7 +189,7 @@ export default function TeacherSettings() {
         <div className="card space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-slate-800">Week Setup</h3>
-            <button onClick={() => (editingWeek ? setEditingWeek(false) : openWeekForm())} className="text-xs text-brand-600 underline">
+            <button onClick={handleToggleWeekEdit} className="text-xs text-brand-600 underline">
               {editingWeek ? "Cancel" : "Edit"}
             </button>
           </div>
