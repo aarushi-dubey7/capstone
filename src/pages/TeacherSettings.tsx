@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -44,16 +44,22 @@ function fmtDateLabel(date: string) {
 }
 
 function InfoTooltip({ label }: { label: string }) {
+  const tooltipId = useId();
   return (
     <div className="relative group">
       <button
         type="button"
         aria-label="More information"
+        aria-describedby={tooltipId}
         className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-semibold text-slate-500 transition-colors hover:border-brand-400 hover:text-brand-700"
       >
         i
       </button>
-      <div className="pointer-events-none absolute right-0 top-7 z-20 w-64 rounded-lg bg-slate-900 px-3 py-2 text-xs leading-5 text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+      <div
+        id={tooltipId}
+        role="tooltip"
+        className="pointer-events-none absolute right-0 top-7 z-20 w-64 rounded-lg bg-slate-900 px-3 py-2 text-xs leading-5 text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      >
         {label}
       </div>
     </div>
@@ -74,7 +80,7 @@ export default function TeacherSettings() {
     thursday: "",
     friday: "",
   });
-  const weekStartLabel = weekStart();
+  const weekStartLabel = useMemo(() => weekStart(), []);
   const todayDate = useMemo(() => formatDateStr(), []);
   const settings = useQuery(api.attendance.getSettings);
   const weekMapping = useQuery(api.weekDayMapping.getWeek, { weekStart: weekStartLabel });
@@ -93,11 +99,10 @@ export default function TeacherSettings() {
   }, [settings]);
 
   const suggestedRotation = useMemo(() => {
-    const date = new Date(`${weekStartLabel}T00:00:00`);
+    const startDate = new Date(`${weekStartLabel}T00:00:00`);
     return WEEKDAYS.map((_, index) => {
-      if (index > 0) {
-        date.setDate(date.getDate() + 1);
-      }
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + index);
       const dateString = formatDateStr(date);
       return {
         date: dateString,
