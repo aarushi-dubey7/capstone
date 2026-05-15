@@ -709,7 +709,7 @@ export default function TeacherDashboard() {
         const names = await parseRosterImage({ imageBase64, mimeType: file.type });
         allNames.push(...names);
       }
-      // Deduplicate names across all images (case-insensitive)
+      // Deduplicate names across all images (case-insensitive, preserves first occurrence)
       const seenNames = new Set<string>();
       const uniqueNames: string[] = [];
       for (const name of allNames) {
@@ -1561,7 +1561,7 @@ export default function TeacherDashboard() {
                         {rosterPreviewImages.map((preview, index) => (
                           <div key={index} className="relative group">
                             <img src={preview} alt={`Roster preview ${index + 1}`} className="max-h-48 rounded-xl border border-slate-200 object-contain w-full" />
-                            <div className="absolute inset-0 rounded-xl border border-slate-200 flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors">
+                            <div className="absolute inset-0 rounded-xl flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors">
                               <span className="text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity">Image {index + 1}</span>
                             </div>
                           </div>
