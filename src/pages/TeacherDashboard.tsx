@@ -241,8 +241,6 @@ export default function TeacherDashboard() {
   const [quickActivityStudentId, setQuickActivityStudentId] = useState<Id<"students"> | null>(null);
   const [quickActivityLabel, setQuickActivityLabel] = useState("");
   const [settingsForm, setSettingsForm] = useState({ tardyThreshold: "3", reminderMinutesAfterStart: "15" });
-  const [editingRotation, setEditingRotation] = useState(false);
-  const [rotationLabel, setRotationLabel] = useState("");
   const [selectedBellType, setSelectedBellType] = useState("Standard");
   const [editingWeek, setEditingWeek] = useState(false);
   const [weekForm, setWeekForm] = useState<Record<Weekday, string>>({
@@ -537,7 +535,6 @@ export default function TeacherDashboard() {
     [allLocations],
   );
 
-  const headerDayLabel = editingRotation ? rotationLabel || todayRotation?.dayLabel : todayRotation?.dayLabel;
 
   async function handleTeacherSubmit() {
     setAuthError("");
@@ -586,15 +583,6 @@ export default function TeacherDashboard() {
     setEditingWeek(true);
   }
 
-  async function saveRotation() {
-    await setRotation({
-      date: todayStr(),
-      dayLabel: rotationLabel || undefined,
-      bellScheduleType: selectedBellType,
-    });
-    setEditingRotation(false);
-    setRotationLabel("");
-  }
 
   async function saveWeekSetup() {
     await setWeekMap({
@@ -853,69 +841,6 @@ export default function TeacherDashboard() {
   function renderScheduleControls() {
     return (
       <div className="space-y-4">
-        <div className="card space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800">Today's Day</h3>
-            <button
-              onClick={() => {
-                setEditingRotation(!editingRotation);
-                setRotationLabel(todayRotation?.dayLabel ?? "");
-              }}
-              className="text-xs text-brand-600 underline"
-            >
-              {editingRotation ? "Cancel" : "Change"}
-            </button>
-          </div>
-
-          {!editingRotation && todayRotation && (
-            <div className="rounded-xl bg-brand-50 px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-brand-600">Today</p>
-              <p className="mt-0.5 text-2xl font-bold text-brand-800">{todayRotation.dayLabel}</p>
-            </div>
-          )}
-
-          {(editingRotation || !todayRotation) && (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-500">What day is today?</p>
-              <div className="grid grid-cols-2 gap-2">
-                {DAY_OPTIONS.map((day) => (
-                  <button
-                    key={day}
-                    onClick={() => setRotationLabel(day)}
-                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                      rotationLabel === day
-                        ? "border-brand-700 bg-brand-700 text-white"
-                        : "border-slate-300 text-slate-600 hover:border-brand-400"
-                    }`}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={saveRotation}
-                disabled={!rotationLabel}
-                className="btn-primary w-full px-4 py-2 text-sm disabled:opacity-40"
-              >
-                Save
-              </button>
-            </div>
-          )}
-
-          {recentRotation.length > 0 && (
-            <div className="space-y-1 border-t border-slate-100 pt-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Recent</p>
-              {recentRotation.slice(0, 5).map((entry) => (
-                <div key={entry._id.toString()} className="flex justify-between text-sm">
-                  <span className="text-slate-400">{entry.date}</span>
-                  <span className="font-medium text-slate-700">
-                    {entry.dayLabel} {entry.bellScheduleType && entry.bellScheduleType !== "Standard" ? `(${entry.bellScheduleType})` : ""}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
 
         <div className="card space-y-3">
           <h3 className="font-semibold text-slate-800">Bell Schedule</h3>
@@ -1084,13 +1009,10 @@ export default function TeacherDashboard() {
 
           <div className="flex flex-col items-end gap-3">
             <button
-              onClick={() => {
-                setEditingRotation(true);
-                setRotationLabel(todayRotation?.dayLabel ?? "");
-              }}
+              onClick={() => navigate("/teacher/settings")}
               className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-brand-50 transition-colors hover:bg-white/20"
             >
-              {headerDayLabel ? `Set today’s day · ${headerDayLabel}` : "Set today’s day"}
+              Settings
             </button>
             <div className="flex gap-2">
               <button
