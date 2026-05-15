@@ -525,7 +525,7 @@ export default function TeacherDashboard() {
         .map((classDoc) => ({
           room: classDoc.room,
           className: classDoc.name,
-          subject: classDoc.subject,
+          block: classDoc.block,
           grade: classDoc.grade ?? null,
         }))
         .sort((a, b) => a.room.localeCompare(b.room)),
@@ -1406,7 +1406,7 @@ export default function TeacherDashboard() {
                     >
                       <div className="font-semibold text-slate-900">{classDoc.name}</div>
                       <div className="mt-1 text-sm text-slate-500">
-                        {classDoc.subject} · Room {classDoc.room}
+                        Block {classDoc.block} · Room {classDoc.room}
                       </div>
                     </button>
                   ))}
@@ -1883,7 +1883,7 @@ export default function TeacherDashboard() {
                                   {day.entries.map((entry) => (
                                     <div key={`${day.date}-${entry.timestamp}`} className="flex flex-col gap-1 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
                                       <div>
-                                        {entry.subject ?? "Class"} · {entry.locationName}
+                                        {entry.blockLabel ?? "Block"} · {entry.locationName}
                                       </div>
                                       <div>
                                         {fmt(entry.timestamp)} {entry.isLate ? "· Late" : ""}
@@ -2031,7 +2031,7 @@ export default function TeacherDashboard() {
                     }`}
                   >
                     <div className="font-semibold text-slate-900">Room {entry.room}</div>
-                    <div className="mt-1 text-sm text-slate-500">{entry.className} · {entry.subject}</div>
+                    <div className="mt-1 text-sm text-slate-500">{entry.className} · Block {entry.block}</div>
                   </button>
                 ))}
               </div>
