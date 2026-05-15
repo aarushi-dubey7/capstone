@@ -34,7 +34,7 @@ export default function TeacherSettings() {
   const [editingRotation, setEditingRotation] = useState(true);
   const [selectedBellType, setSelectedBellType] = useState("Standard");
 
-  const teacherProfile = useQuery(api.teachers.getById, teacherId ? { id: teacherId } : 'skip');
+  const teacherProfile = useQuery(api.teachers.getById, teacherId ? { id: teacherId } : "skip");
   const todayRotation = useQuery(api.scheduleRotation.getByDate, { date: todayStr() });
   const recentRotation = useQuery(api.scheduleRotation.listRecent) ?? [];
   const bellSchedules = useQuery(api.bellSchedules.list) ?? [];
@@ -182,7 +182,7 @@ export default function TeacherSettings() {
                   }}
                   className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-sm font-medium transition-all ${
                     selectedBellType === schedule.type
-                      ? "border-brand-200 bg-brand-50 ring-2 ring-brand-500/20 text-brand-800"
+                      ? "border-brand-200 bg-brand-50 text-brand-800 ring-2 ring-brand-500/20"
                       : "border-slate-200 text-slate-600 hover:border-brand-300"
                   }`}
                 >
