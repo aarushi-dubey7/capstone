@@ -709,10 +709,16 @@ export default function TeacherDashboard() {
         const names = await parseRosterImage({ imageBase64, mimeType: file.type });
         allNames.push(...names);
       }
-      // Deduplicate names across all images
-      const uniqueNames = allNames.filter((name, index, all) => 
-        all.findIndex((entry) => entry.toLowerCase() === name.toLowerCase()) === index
-      );
+      // Deduplicate names across all images (case-insensitive)
+      const seenNames = new Set<string>();
+      const uniqueNames: string[] = [];
+      for (const name of allNames) {
+        const lowerName = name.toLowerCase();
+        if (!seenNames.has(lowerName)) {
+          seenNames.add(lowerName);
+          uniqueNames.push(name);
+        }
+      }
       setParsedRosterNames(uniqueNames);
     } catch (error) {
       setRosterParseError(error instanceof Error ? error.message : "Could not parse roster images.");
@@ -1553,10 +1559,10 @@ export default function TeacherDashboard() {
                     {rosterPreviewImages.length > 0 && (
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
                         {rosterPreviewImages.map((preview, index) => (
-                          <div key={index} className="relative">
+                          <div key={index} className="relative group">
                             <img src={preview} alt={`Roster preview ${index + 1}`} className="max-h-48 rounded-xl border border-slate-200 object-contain w-full" />
-                            <div className="absolute inset-0 rounded-xl border border-slate-200 flex items-center justify-center bg-black/0 hover:bg-black/5">
-                              <span className="text-xs font-semibold text-slate-500">Image {index + 1}</span>
+                            <div className="absolute inset-0 rounded-xl border border-slate-200 flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors">
+                              <span className="text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity">Image {index + 1}</span>
                             </div>
                           </div>
                         ))}
