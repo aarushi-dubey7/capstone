@@ -14,6 +14,13 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_role", ["role"]),
 
+  teachers: defineTable({
+    name: v.string(),
+    email: v.string(),
+    passwordHash: v.string(),
+    createdAt: v.number(),
+  }).index("by_email", ["email"]),
+
   // Each ESP32 beacon maps to one location
   locations: defineTable({
     name: v.string(),                  // "Room C2"
@@ -71,6 +78,41 @@ export default defineSchema({
   }).index("by_room", ["room"])
     .index("by_grade", ["grade"]),
 
+  teacherClasses: defineTable({
+    teacherId: v.id("teachers"),
+    name: v.string(),
+    subject: v.string(),
+    room: v.string(),
+    grade: v.optional(v.string()),
+    active: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_teacherId", ["teacherId"])
+    .index("by_teacherId_and_active", ["teacherId", "active"]),
+
+  classRosterEntries: defineTable({
+    classId: v.id("teacherClasses"),
+    displayName: v.string(),
+    linkedStudentId: v.optional(v.id("students")),
+    source: v.union(v.literal("uploaded"), v.literal("manual")),
+    status: v.union(v.literal("linked"), v.literal("placeholder")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_classId", ["classId"])
+    .index("by_linkedStudentId", ["linkedStudentId"]),
+
+  teacherDayBlocks: defineTable({
+    teacherId: v.id("teachers"),
+    dayLabel: v.string(),
+    blockLabel: v.string(),
+    classId: v.id("teacherClasses"),
+    updatedAt: v.number(),
+  })
+    .index("by_teacherId_and_dayLabel", ["teacherId", "dayLabel"])
+    .index("by_teacherId_and_dayLabel_and_blockLabel", ["teacherId", "dayLabel", "blockLabel"]),
+
   // Every check-in is appended here
   logs: defineTable({
     studentId: v.id("students"),
@@ -83,4 +125,42 @@ export default defineSchema({
     .index("by_student", ["studentId"])
     .index("by_date", ["date"])
     .index("by_student_date", ["studentId", "date"]),
+
+  attendanceStatus: defineTable({
+    studentId: v.id("students"),
+    date: v.string(),
+    status: v.union(
+      v.literal("present"),
+      v.literal("absent"),
+      v.literal("activity"),
+      v.literal("excused"),
+      v.literal("unresolved"),
+    ),
+    activityLabel: v.optional(v.string()),
+    reason: v.optional(v.string()),
+    source: v.union(
+      v.literal("teacher"),
+      v.literal("self_check_in"),
+      v.literal("system"),
+    ),
+    updatedAt: v.number(),
+  })
+    .index("by_student_and_date", ["studentId", "date"])
+    .index("by_date_and_status", ["date", "status"]),
+
+  scheduledActivities: defineTable({
+    studentId: v.id("students"),
+    date: v.string(),
+    activityLabel: v.string(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_student_and_date", ["studentId", "date"])
+    .index("by_date", ["date"]),
+
+  attendanceSettings: defineTable({
+    tardyThreshold: v.number(),
+    reminderMinutesAfterStart: v.number(),
+  }),
 });

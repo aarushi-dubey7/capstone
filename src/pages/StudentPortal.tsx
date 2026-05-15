@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -21,6 +21,20 @@ export default function StudentPortal() {
   const [state, setState] = useState<CheckState>("idle");
   const [message, setMessage] = useState("");
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
+  const infoRef = useRef<HTMLDivElement>(null);
+
+  // Close popover on outside click
+  useEffect(() => {
+    if (!showInfo) return;
+    function handleClick(e: MouseEvent) {
+      if (infoRef.current && !infoRef.current.contains(e.target as Node)) {
+        setShowInfo(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showInfo]);
 
   // Redirect if not registered
   useEffect(() => {
@@ -199,6 +213,49 @@ export default function StudentPortal() {
           className="text-white/50 text-sm hover:text-white/80 transition-colors"
         >
           Back to home
+        </button>
+      </div>
+
+      {/* ── Floating Account Info FAB ── */}
+      <div ref={infoRef} className="fixed bottom-6 right-6 z-50">
+        {showInfo && (
+          <div className="absolute bottom-16 right-0 w-72 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-5 shadow-2xl animate-fade-in">
+            <h3 className="text-white font-bold text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              My Account
+            </h3>
+            <div className="space-y-2.5">
+              <div>
+                <p className="text-white/50 text-xs font-medium">Name</p>
+                <p className="text-white text-sm font-semibold">{student.name}</p>
+              </div>
+              <div>
+                <p className="text-white/50 text-xs font-medium">Email</p>
+                <p className="text-white text-sm font-semibold">{student.email ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-white/50 text-xs font-medium">Student ID</p>
+                <p className="text-white text-sm font-semibold font-mono">{student.studentId}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        <button
+          onClick={() => setShowInfo((v) => !v)}
+          className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 ${
+            showInfo
+              ? "bg-white text-brand-800 rotate-45"
+              : "bg-white/15 backdrop-blur text-white hover:bg-white/25"
+          }`}
+          aria-label="View account info"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
         </button>
       </div>
     </div>
