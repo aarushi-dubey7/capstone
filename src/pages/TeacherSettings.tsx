@@ -11,7 +11,7 @@ const WEEKDAYS: Weekday[] = ["monday", "tuesday", "wednesday", "thursday", "frid
 const DEFAULT_TARDY_THRESHOLD = 3;
 const DEFAULT_REMINDER_MINUTES = 15;
 
-function todayStr(date = new Date()) {
+function formatDateStr(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -22,7 +22,7 @@ function weekStart() {
   const date = new Date();
   const day = date.getDay();
   date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
-  return todayStr(date);
+  return formatDateStr(date);
 }
 
 function todayWeekdayKey(): Weekday {
@@ -76,7 +76,7 @@ export default function TeacherSettings() {
   const weekStartLabel = weekStart();
   const settings = useQuery(api.attendance.getSettings);
   const weekMapping = useQuery(api.weekDayMapping.getWeek, { weekStart: weekStartLabel });
-  const todayRotation = useQuery(api.scheduleRotation.getByDate, { date: todayStr() });
+  const todayRotation = useQuery(api.scheduleRotation.getByDate, { date: formatDateStr() });
 
   const updateSettings = useMutation(api.attendance.updateSettings);
   const setWeekMap = useMutation(api.weekDayMapping.setWeek);
@@ -95,7 +95,7 @@ export default function TeacherSettings() {
     return WEEKDAYS.map((_, index) => {
       const date = new Date(startDate);
       date.setDate(startDate.getDate() + index);
-      const dateString = todayStr(date);
+      const dateString = formatDateStr(date);
       return {
         date: dateString,
         label: CALENDAR_ROTATION[dateString],
@@ -126,7 +126,7 @@ export default function TeacherSettings() {
     const todayLabel = weekForm[todayWeekdayKey()];
     if (todayLabel) {
       await setRotation({
-        date: todayStr(),
+        date: formatDateStr(),
         dayLabel: todayLabel,
         bellScheduleType: todayRotation?.bellScheduleType ?? "Standard",
       });

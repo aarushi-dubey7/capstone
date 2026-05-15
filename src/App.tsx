@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "./pages/Home";
 import StudentPortal from "./pages/StudentPortal";
 import Onboarding from "./pages/Onboarding";
@@ -13,7 +13,7 @@ export default function App() {
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/teacher" element={<TeacherDashboard />} />
       <Route path="/teacher/settings" element={<TeacherSettings />} />
-      <Route path="/settings" element={<TeacherSettings />} />
+      <Route path="/settings" element={<Navigate to="/teacher/settings" replace />} />
     </Routes>
   );
 }
