@@ -3,6 +3,7 @@ import Home from "./pages/Home";
 import StudentPortal from "./pages/StudentPortal";
 import Onboarding from "./pages/Onboarding";
 import TeacherDashboard from "./pages/TeacherDashboard";
+import TeacherSettings from "./pages/TeacherSettings";
 
 export default function App() {
   return (
@@ -11,6 +12,8 @@ export default function App() {
       <Route path="/student" element={<StudentPortal />} />
       <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/teacher" element={<TeacherDashboard />} />
+      <Route path="/teacher/settings" element={<TeacherSettings />} />
+      <Route path="/settings" element={<TeacherSettings />} />
     </Routes>
   );
 }
