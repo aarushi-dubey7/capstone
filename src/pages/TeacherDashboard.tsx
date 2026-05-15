@@ -709,7 +709,7 @@ export default function TeacherDashboard() {
   }
 
   async function handleParseRoster() {
-    if (!rosterFiles || rosterFiles.length === 0) return;
+    if (rosterFiles.length === 0) return;
     setIsParsingRoster(true);
     setRosterParseError("");
     try {
@@ -1571,7 +1571,7 @@ export default function TeacherDashboard() {
                     {rosterPreviewImages.length > 0 && (
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
                         {rosterPreviewImages.map((preview, index) => (
-                          <div key={index} className="relative group" aria-label={`Roster image ${index + 1} of ${rosterPreviewImages.length}`}>
+                          <div key={index} className="relative group" role="group" aria-label={`Roster image ${index + 1} of ${rosterPreviewImages.length}`}>
                             <img src={preview} alt={`Roster preview ${index + 1}`} className="max-h-48 rounded-xl border border-slate-200 object-contain w-full" />
                             <div className="absolute inset-0 rounded-xl flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors" aria-hidden="true">
                               <span className="text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity">Image {index + 1}</span>
