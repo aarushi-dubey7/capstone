@@ -8,6 +8,8 @@ type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
 
 const DAY_OPTIONS = ["Day 1", "Day 2", "Day 3", "Day 4"];
 const WEEKDAYS: Weekday[] = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+const DEFAULT_TARDY_THRESHOLD = 3;
+const DEFAULT_REMINDER_MINUTES = 15;
 
 function todayStr(date = new Date()) {
   const year = date.getFullYear();
@@ -24,8 +26,11 @@ function weekStart() {
 }
 
 function todayWeekdayKey(): Weekday {
-  const keys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  return (keys[new Date().getDay()] ?? "monday") as Weekday;
+  const dayIndex = new Date().getDay();
+  if (dayIndex === 0 || dayIndex === 6) {
+    return "monday";
+  }
+  return WEEKDAYS[dayIndex - 1] ?? "monday";
 }
 
 function fmtDateLabel(date: string) {
@@ -56,7 +61,10 @@ function InfoTooltip({ label }: { label: string }) {
 
 export default function TeacherSettings() {
   const navigate = useNavigate();
-  const [settingsForm, setSettingsForm] = useState({ tardyThreshold: "3", reminderMinutesAfterStart: "15" });
+  const [settingsForm, setSettingsForm] = useState({
+    tardyThreshold: String(DEFAULT_TARDY_THRESHOLD),
+    reminderMinutesAfterStart: String(DEFAULT_REMINDER_MINUTES),
+  });
   const [editingWeek, setEditingWeek] = useState(false);
   const [weekForm, setWeekForm] = useState<Record<Weekday, string>>({
     monday: "",
@@ -128,8 +136,9 @@ export default function TeacherSettings() {
 
   async function saveSettings() {
     await updateSettings({
-      tardyThreshold: Number(settingsForm.tardyThreshold) || settings?.tardyThreshold || 3,
-      reminderMinutesAfterStart: Number(settingsForm.reminderMinutesAfterStart) || settings?.reminderMinutesAfterStart || 15,
+      tardyThreshold: Number(settingsForm.tardyThreshold) || settings?.tardyThreshold || DEFAULT_TARDY_THRESHOLD,
+      reminderMinutesAfterStart:
+        Number(settingsForm.reminderMinutesAfterStart) || settings?.reminderMinutesAfterStart || DEFAULT_REMINDER_MINUTES,
     });
   }
 
