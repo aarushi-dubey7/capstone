@@ -264,8 +264,8 @@ export default function TeacherDashboard() {
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, Record<string, string>>>({});
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteError, setDeleteError] = useState("");
-  const [rosterPreviewImage, setRosterPreviewImage] = useState<string | null>(null);
-  const [rosterFile, setRosterFile] = useState<File | null>(null);
+  const [rosterPreviewImages, setRosterPreviewImages] = useState<string[]>([]);
+  const [rosterFiles, setRosterFiles] = useState<File[]>([]);
   const [parsedRosterNames, setParsedRosterNames] = useState<string[]>([]);
   const [rosterSelections, setRosterSelections] = useState<Record<string, string>>({});
   const [rosterParseError, setRosterParseError] = useState("");
@@ -690,24 +690,32 @@ export default function TeacherDashboard() {
     setSelectedClassId(null);
   }
 
-  function applyRosterFile(file: File) {
-    setRosterFile(file);
+  function applyRosterFiles(files: File[]) {
+    setRosterFiles(files);
     setParsedRosterNames([]);
     setRosterSelections({});
     setRosterParseError("");
-    setRosterPreviewImage(URL.createObjectURL(file));
+    setRosterPreviewImages(files.map(file => URL.createObjectURL(file)));
   }
 
   async function handleParseRoster() {
-    if (!rosterFile) return;
+    if (!rosterFiles || rosterFiles.length === 0) return;
     setIsParsingRoster(true);
     setRosterParseError("");
     try {
-      const imageBase64 = await fileToBase64(rosterFile);
-      const names = await parseRosterImage({ imageBase64, mimeType: rosterFile.type });
-      setParsedRosterNames(names);
+      const allNames: string[] = [];
+      for (const file of rosterFiles) {
+        const imageBase64 = await fileToBase64(file);
+        const names = await parseRosterImage({ imageBase64, mimeType: file.type });
+        allNames.push(...names);
+      }
+      // Deduplicate names across all images
+      const uniqueNames = allNames.filter((name, index, all) => 
+        all.findIndex((entry) => entry.toLowerCase() === name.toLowerCase()) === index
+      );
+      setParsedRosterNames(uniqueNames);
     } catch (error) {
-      setRosterParseError(error instanceof Error ? error.message : "Could not parse roster image.");
+      setRosterParseError(error instanceof Error ? error.message : "Could not parse roster images.");
     } finally {
       setIsParsingRoster(false);
     }
@@ -723,8 +731,8 @@ export default function TeacherDashboard() {
         linkedStudentId: (rosterSelections[match.displayName] || null) as Id<"students"> | null,
       })),
     });
-    setRosterFile(null);
-    setRosterPreviewImage(null);
+    setRosterFiles([]);
+    setRosterPreviewImages([]);
     setParsedRosterNames([]);
     setRosterSelections({});
   }
@@ -1524,30 +1532,40 @@ export default function TeacherDashboard() {
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="text-lg font-semibold text-slate-900">Roster Upload</h3>
-                        <p className="text-sm text-slate-500">Upload a roster image, let Groq read the names, then confirm the matches.</p>
+                        <p className="text-sm text-slate-500">Upload roster images, let Groq read the names, then confirm the matches.</p>
                       </div>
                       <button onClick={() => rosterFileRef.current?.click()} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700">
-                        Choose Image
+                        Choose Images
                       </button>
                       <input
                         ref={rosterFileRef}
                         type="file"
                         accept="image/*"
+                        multiple
                         className="hidden"
                         onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file) applyRosterFile(file);
+                          const files = Array.from(event.target.files ?? []);
+                          if (files.length > 0) applyRosterFiles(files);
                         }}
                       />
                     </div>
 
-                    {rosterPreviewImage && (
-                      <img src={rosterPreviewImage} alt="Roster preview" className="max-h-72 rounded-2xl border border-slate-200 object-contain" />
+                    {rosterPreviewImages.length > 0 && (
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                        {rosterPreviewImages.map((preview, index) => (
+                          <div key={index} className="relative">
+                            <img src={preview} alt={`Roster preview ${index + 1}`} className="max-h-48 rounded-xl border border-slate-200 object-contain w-full" />
+                            <div className="absolute inset-0 rounded-xl border border-slate-200 flex items-center justify-center bg-black/0 hover:bg-black/5">
+                              <span className="text-xs font-semibold text-slate-500">Image {index + 1}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
 
-                    {rosterFile && parsedRosterNames.length === 0 && (
+                    {rosterFiles.length > 0 && parsedRosterNames.length === 0 && (
                       <button onClick={handleParseRoster} disabled={isParsingRoster} className="btn-primary w-full disabled:opacity-50">
-                        {isParsingRoster ? "Reading roster..." : "Parse Roster with Groq"}
+                        {isParsingRoster ? `Reading rosters (${rosterFiles.length} images)...` : `Parse Rosters with Groq (${rosterFiles.length} images)`}
                       </button>
                     )}
 
