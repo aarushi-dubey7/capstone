@@ -10,6 +10,7 @@ const DAY_OPTIONS = ["Day 1", "Day 2", "Day 3", "Day 4"];
 const WEEKDAYS: Weekday[] = ["monday", "tuesday", "wednesday", "thursday", "friday"];
 const DEFAULT_TARDY_THRESHOLD = 3;
 const DEFAULT_REMINDER_MINUTES = 15;
+const DEFAULT_BELL_SCHEDULE_TYPE = "Standard";
 
 function formatDateStr(date = new Date()) {
   const year = date.getFullYear();
@@ -74,9 +75,10 @@ export default function TeacherSettings() {
     friday: "",
   });
   const weekStartLabel = weekStart();
+  const todayDate = useMemo(() => formatDateStr(), []);
   const settings = useQuery(api.attendance.getSettings);
   const weekMapping = useQuery(api.weekDayMapping.getWeek, { weekStart: weekStartLabel });
-  const todayRotation = useQuery(api.scheduleRotation.getByDate, { date: formatDateStr() });
+  const todayRotation = useQuery(api.scheduleRotation.getByDate, { date: todayDate });
 
   const updateSettings = useMutation(api.attendance.updateSettings);
   const setWeekMap = useMutation(api.weekDayMapping.setWeek);
@@ -126,19 +128,26 @@ export default function TeacherSettings() {
     const todayLabel = weekForm[todayWeekdayKey()];
     if (todayLabel) {
       await setRotation({
-        date: formatDateStr(),
+        date: todayDate,
         dayLabel: todayLabel,
-        bellScheduleType: todayRotation?.bellScheduleType ?? "Standard",
+        bellScheduleType: todayRotation?.bellScheduleType ?? DEFAULT_BELL_SCHEDULE_TYPE,
       });
     }
     setEditingWeek(false);
   }
 
   async function saveSettings() {
+    const parsedTardyThreshold = Number(settingsForm.tardyThreshold);
+    const parsedReminderMinutes = Number(settingsForm.reminderMinutesAfterStart);
     await updateSettings({
-      tardyThreshold: Number(settingsForm.tardyThreshold) || settings?.tardyThreshold || DEFAULT_TARDY_THRESHOLD,
+      tardyThreshold:
+        Number.isFinite(parsedTardyThreshold) && parsedTardyThreshold > 0
+          ? parsedTardyThreshold
+          : settings?.tardyThreshold ?? DEFAULT_TARDY_THRESHOLD,
       reminderMinutesAfterStart:
-        Number(settingsForm.reminderMinutesAfterStart) || settings?.reminderMinutesAfterStart || DEFAULT_REMINDER_MINUTES,
+        Number.isFinite(parsedReminderMinutes) && parsedReminderMinutes > 0
+          ? parsedReminderMinutes
+          : settings?.reminderMinutesAfterStart ?? DEFAULT_REMINDER_MINUTES,
     });
   }
 
