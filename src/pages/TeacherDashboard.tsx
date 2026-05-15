@@ -1883,7 +1883,7 @@ export default function TeacherDashboard() {
                                   {day.entries.map((entry) => (
                                     <div key={`${day.date}-${entry.timestamp}`} className="flex flex-col gap-1 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
                                       <div>
-                                        {entry.blockLabel ?? "Block"} · {entry.locationName}
+                                        {entry.period ?? "Block"} · {entry.locationName}
                                       </div>
                                       <div>
                                         {fmt(entry.timestamp)} {entry.isLate ? "· Late" : ""}

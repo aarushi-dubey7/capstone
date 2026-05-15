@@ -579,7 +579,7 @@ export const getTeacherRoster = query({
           latestLocationName: latestLog?.locationName ?? null,
           latestRoom: latestLog ? formatRoomCode(latestLog.locationName).toUpperCase() : null,
           className: assignmentContext.activeClass?.name ?? null,
-          subject: assignmentContext.activeClass?.subject ?? null,
+          block: assignmentContext.activeClass?.block ?? null,
           assignedRoom: assignmentContext.activeClass?.room ?? null,
           blockLabel: assignmentContext.selectedBlockLabel,
           isLateToday: latestLog?.isLate ?? false,
@@ -665,7 +665,7 @@ export const getTeacherRoster = query({
         ? {
             _id: assignmentContext.activeClass._id,
             name: assignmentContext.activeClass.name,
-            subject: assignmentContext.activeClass.subject,
+            block: assignmentContext.activeClass.block,
             room: assignmentContext.activeClass.room,
             grade: assignmentContext.activeClass.grade ?? null,
           }
