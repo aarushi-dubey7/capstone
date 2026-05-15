@@ -32,15 +32,19 @@ export const create = mutation({
   args: {
     teacherId: v.id("teachers"),
     name: v.string(),
-    subject: v.string(),
+    block: v.string(),
     room: v.string(),
     grade: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const validBlocks = ["A", "B", "C", "D", "E", "F", "G", "H", "EP1", "EP2"];
+    if (!validBlocks.includes(args.block.toUpperCase())) {
+      throw new Error("Invalid block. Must be A-H or EP1/EP2.");
+    }
     const classId = await ctx.db.insert("teacherClasses", {
       teacherId: args.teacherId,
       name: args.name.trim(),
-      subject: args.subject.trim(),
+      block: args.block.trim().toUpperCase(),
       room: args.room.trim(),
       grade: args.grade?.trim() || undefined,
       active: true,
@@ -55,7 +59,7 @@ export const update = mutation({
   args: {
     classId: v.id("teacherClasses"),
     name: v.optional(v.string()),
-    subject: v.optional(v.string()),
+    block: v.optional(v.string()),
     room: v.optional(v.string()),
     grade: v.optional(v.string()),
     active: v.optional(v.boolean()),
@@ -65,7 +69,13 @@ export const update = mutation({
       updatedAt: now(),
     };
     if (rest.name !== undefined) patch.name = rest.name.trim();
-    if (rest.subject !== undefined) patch.subject = rest.subject.trim();
+    if (rest.block !== undefined) {
+      const validBlocks = ["A", "B", "C", "D", "E", "F", "G", "H", "EP1", "EP2"];
+      if (!validBlocks.includes(rest.block.toUpperCase())) {
+        throw new Error("Invalid block. Must be A-H or EP1/EP2.");
+      }
+      patch.block = rest.block.trim().toUpperCase();
+    }
     if (rest.room !== undefined) patch.room = rest.room.trim();
     if (rest.grade !== undefined) patch.grade = rest.grade.trim() || undefined;
     if (rest.active !== undefined) patch.active = rest.active;
@@ -424,7 +434,7 @@ export const getTeacherStudentDirectory = query({
           .map((classDoc) => ({
             classId: classDoc._id,
             className: classDoc.name,
-            subject: classDoc.subject,
+            block: classDoc.block,
             room: classDoc.room,
           }))
           .sort((a, b) => a.className.localeCompare(b.className));
