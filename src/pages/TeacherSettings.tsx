@@ -34,7 +34,7 @@ export default function TeacherSettings() {
   const [editingRotation, setEditingRotation] = useState(true);
   const [selectedBellType, setSelectedBellType] = useState("Standard");
 
-  const teacherProfile = useQuery(teacherId ? api.teachers.getById : "skip", teacherId ? { id: teacherId } : "skip");
+  const teacherProfile = useQuery(api.teachers.getById, teacherId ? { id: teacherId } : undefined);
   const todayRotation = useQuery(api.scheduleRotation.getByDate, { date: todayStr() });
   const recentRotation = useQuery(api.scheduleRotation.listRecent) ?? [];
   const bellSchedules = useQuery(api.bellSchedules.list) ?? [];
@@ -165,7 +165,7 @@ export default function TeacherSettings() {
             )}
           </div>
 
-          <div className="card space-y-3 mt-6">
+          <div className="card mt-6 space-y-3">
             <h3 className="font-semibold text-slate-800">Bell Schedule</h3>
             <p className="text-xs text-slate-500">Change the format for special events.</p>
             <div className="space-y-2">
