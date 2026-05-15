@@ -256,8 +256,8 @@ export default function TeacherDashboard() {
   const [roomName, setRoomName] = useState("");
   const [roomUuid, setRoomUuid] = useState("");
   const [roomDeviceName, setRoomDeviceName] = useState("");
-  const [classForm, setClassForm] = useState({ name: "", subject: "", room: "", grade: "" });
-  const [newClassForm, setNewClassForm] = useState({ name: "", subject: "", room: "", grade: "" });
+  const [classForm, setClassForm] = useState({ name: "", block: "", room: "", grade: "" });
+  const [newClassForm, setNewClassForm] = useState({ name: "", block: "", room: "", grade: "" });
   const [manualEntryName, setManualEntryName] = useState("");
   const [manualLinkedStudentId, setManualLinkedStudentId] = useState("");
   const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
@@ -386,7 +386,7 @@ export default function TeacherDashboard() {
     if (classDetails?.class) {
       setClassForm({
         name: classDetails.class.name,
-        subject: classDetails.class.subject,
+        block: classDetails.class.block,
         room: classDetails.class.room,
         grade: classDetails.class.grade ?? "",
       });
@@ -658,17 +658,17 @@ export default function TeacherDashboard() {
   }
 
   async function handleCreateClass() {
-    if (!teacherId || !newClassForm.name.trim() || !newClassForm.subject.trim() || !newClassForm.room.trim()) {
+    if (!teacherId || !newClassForm.name.trim() || !newClassForm.block.trim() || !newClassForm.room.trim()) {
       return;
     }
     const classId = await createTeacherClass({
       teacherId,
       name: newClassForm.name.trim(),
-      subject: newClassForm.subject.trim(),
+      block: newClassForm.block.trim(),
       room: newClassForm.room.trim(),
       grade: newClassForm.grade.trim() || undefined,
     });
-    setNewClassForm({ name: "", subject: "", room: "", grade: "" });
+    setNewClassForm({ name: "", block: "", room: "", grade: "" });
     setSelectedClassId(classId);
   }
 
@@ -677,7 +677,7 @@ export default function TeacherDashboard() {
     await updateTeacherClass({
       classId: selectedClassId,
       name: classForm.name.trim(),
-      subject: classForm.subject.trim(),
+      block: classForm.block.trim(),
       room: classForm.room.trim(),
       grade: classForm.grade.trim() || undefined,
     });
@@ -1427,13 +1427,23 @@ export default function TeacherDashboard() {
                   placeholder="Class name"
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
-                <input
-                  type="text"
-                  value={newClassForm.subject}
-                  onChange={(event) => setNewClassForm((current) => ({ ...current, subject: event.target.value }))}
-                  placeholder="Subject"
+                <select
+                  value={newClassForm.block}
+                  onChange={(event) => setNewClassForm((current) => ({ ...current, block: event.target.value }))}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
+                >
+                  <option value="">Select Block</option>
+                  <option value="A">A</option>
+                  <option value="B">B</option>
+                  <option value="C">C</option>
+                  <option value="D">D</option>
+                  <option value="E">E</option>
+                  <option value="F">F</option>
+                  <option value="G">G</option>
+                  <option value="H">H</option>
+                  <option value="EP1">EP1</option>
+                  <option value="EP2">EP2</option>
+                </select>
                 <div className="grid gap-3 md:grid-cols-2">
                   <input
                     type="text"
@@ -1464,7 +1474,7 @@ export default function TeacherDashboard() {
                       {classDetails?.class.name ?? "Select a class"}
                     </h2>
                     <p className="mt-1 text-sm text-slate-500">
-                      {classDetails?.class.subject ?? "Class setup"} {classDetails?.class ? `· Room ${classDetails.class.room}` : ""}
+                      {classDetails?.class.block ? `Block ${classDetails.class.block}` : "Class setup"} {classDetails?.class ? `· Room ${classDetails.class.room}` : ""}
                     </p>
                   </div>
                   {classDetails?.class && (
@@ -1486,13 +1496,23 @@ export default function TeacherDashboard() {
                       placeholder="Class name"
                       className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     />
-                    <input
-                      type="text"
-                      value={classForm.subject}
-                      onChange={(event) => setClassForm((current) => ({ ...current, subject: event.target.value }))}
-                      placeholder="Subject"
+                    <select
+                      value={classForm.block}
+                      onChange={(event) => setClassForm((current) => ({ ...current, block: event.target.value }))}
                       className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
+                    >
+                      <option value="">Select Block</option>
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                      <option value="D">D</option>
+                      <option value="E">E</option>
+                      <option value="F">F</option>
+                      <option value="G">G</option>
+                      <option value="H">H</option>
+                      <option value="EP1">EP1</option>
+                      <option value="EP2">EP2</option>
+                    </select>
                     <input
                       type="text"
                       value={classForm.room}
