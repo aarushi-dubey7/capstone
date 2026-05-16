@@ -65,6 +65,19 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function revokeObjectUrls(urls: string[]) {
+  urls.forEach((url) => URL.revokeObjectURL(url));
+}
+
+function getRosterPreviewKey(file: File | undefined, index: number) {
+  if (!file) return `roster-preview-${index}`;
+  return `${file.name}-${file.lastModified}-${file.size}`;
+}
+
+function isSafeRosterPreviewUrl(url: string) {
+  return url.startsWith("blob:");
+}
+
 function statusBadge(status: string) {
   if (status === "present") return "bg-emerald-100 text-emerald-700";
   if (status === "absent") return "bg-red-100 text-red-700";
@@ -214,6 +227,7 @@ function AuthPanel({
 export default function TeacherDashboard() {
   const navigate = useNavigate();
   const rosterFileRef = useRef<HTMLInputElement>(null);
+  const rosterPreviewImagesRef = useRef<string[]>([]);
   const [teacherId, setTeacherId] = useState<Id<"teachers"> | null>(() => {
     const stored = getStoredTeacherId();
     return stored ? (stored as Id<"teachers">) : null;
@@ -262,8 +276,8 @@ export default function TeacherDashboard() {
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, Record<string, string>>>({});
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteError, setDeleteError] = useState("");
-  const [rosterPreviewImage, setRosterPreviewImage] = useState<string | null>(null);
-  const [rosterFile, setRosterFile] = useState<File | null>(null);
+  const [rosterPreviewImages, setRosterPreviewImages] = useState<string[]>([]);
+  const [rosterFiles, setRosterFiles] = useState<File[]>([]);
   const [parsedRosterNames, setParsedRosterNames] = useState<string[]>([]);
   const [rosterSelections, setRosterSelections] = useState<Record<string, string>>({});
   const [rosterParseError, setRosterParseError] = useState("");
@@ -338,6 +352,23 @@ export default function TeacherDashboard() {
   useEffect(() => {
     initBellSchedules();
   }, [initBellSchedules]);
+
+  useEffect(() => {
+    rosterPreviewImagesRef.current = rosterPreviewImages;
+  }, [rosterPreviewImages]);
+
+  useEffect(() => {
+    const unsafePreviewUrls = rosterPreviewImages.filter((preview) => !isSafeRosterPreviewUrl(preview));
+    if (unsafePreviewUrls.length > 0) {
+      console.warn("Rejected unexpected roster preview URLs.", unsafePreviewUrls);
+    }
+  }, [rosterPreviewImages]);
+
+  useEffect(() => {
+    return () => {
+      revokeObjectUrls(rosterPreviewImagesRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!loginSubmitted || loginResult === undefined) return;
@@ -678,24 +709,45 @@ export default function TeacherDashboard() {
     setSelectedClassId(null);
   }
 
-  function applyRosterFile(file: File) {
-    setRosterFile(file);
+  function applyRosterFiles(files: File[]) {
+    revokeObjectUrls(rosterPreviewImagesRef.current);
+    const previewImages = files.map((file) => URL.createObjectURL(file));
+    setRosterFiles(files);
     setParsedRosterNames([]);
     setRosterSelections({});
     setRosterParseError("");
-    setRosterPreviewImage(URL.createObjectURL(file));
+    setRosterPreviewImages(previewImages);
   }
 
   async function handleParseRoster() {
-    if (!rosterFile) return;
+    if (rosterFiles.length === 0) return;
     setIsParsingRoster(true);
     setRosterParseError("");
     try {
-      const imageBase64 = await fileToBase64(rosterFile);
-      const names = await parseRosterImage({ imageBase64, mimeType: rosterFile.type });
-      setParsedRosterNames(names);
+      const allNames: string[] = [];
+      for (const [index, file] of rosterFiles.entries()) {
+        try {
+          const imageBase64 = await fileToBase64(file);
+          const names = await parseRosterImage({ imageBase64, mimeType: file.type });
+          allNames.push(...names);
+        } catch (error) {
+          const details = error instanceof Error && error.message ? `: ${error.message}` : "";
+          throw new Error(`Failed to parse image ${index + 1} of ${rosterFiles.length}${details}`);
+        }
+      }
+      // Deduplicate names across all images (case-insensitive, preserves first occurrence)
+      const seenNames = new Set<string>();
+      const uniqueNames: string[] = [];
+      for (const name of allNames) {
+        const lowerName = name.toLowerCase();
+        if (!seenNames.has(lowerName)) {
+          seenNames.add(lowerName);
+          uniqueNames.push(name);
+        }
+      }
+      setParsedRosterNames(uniqueNames);
     } catch (error) {
-      setRosterParseError(error instanceof Error ? error.message : "Could not parse roster image.");
+      setRosterParseError(error instanceof Error ? error.message : "Could not parse roster images.");
     } finally {
       setIsParsingRoster(false);
     }
@@ -711,8 +763,10 @@ export default function TeacherDashboard() {
         linkedStudentId: (rosterSelections[match.displayName] || null) as Id<"students"> | null,
       })),
     });
-    setRosterFile(null);
-    setRosterPreviewImage(null);
+    revokeObjectUrls(rosterPreviewImagesRef.current);
+    rosterPreviewImagesRef.current = [];
+    setRosterFiles([]);
+    setRosterPreviewImages([]);
     setParsedRosterNames([]);
     setRosterSelections({});
   }
@@ -1466,30 +1520,55 @@ export default function TeacherDashboard() {
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="text-lg font-semibold text-slate-900">Roster Upload</h3>
-                        <p className="text-sm text-slate-500">Upload a roster image, let Groq read the names, then confirm the matches.</p>
+                        <p className="text-sm text-slate-500">Upload roster images, let Groq read the names, then confirm the matches.</p>
                       </div>
                       <button onClick={() => rosterFileRef.current?.click()} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700">
-                        Choose Image
+                        Choose Images
                       </button>
                       <input
                         ref={rosterFileRef}
                         type="file"
                         accept="image/*"
+                        multiple
                         className="hidden"
                         onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file) applyRosterFile(file);
+                          const files = Array.from(event.target.files ?? []);
+                          if (files.length > 0) applyRosterFiles(files);
                         }}
                       />
                     </div>
 
-                    {rosterPreviewImage && (
-                      <img src={rosterPreviewImage} alt="Roster preview" className="max-h-72 rounded-2xl border border-slate-200 object-contain" />
+                    {rosterPreviewImages.length > 0 && (
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                        {rosterPreviewImages.map((preview, index) => {
+                          const previewFile = index < rosterFiles.length ? rosterFiles[index] : undefined;
+                          return (
+                          <div
+                            key={getRosterPreviewKey(previewFile, index)}
+                            className="relative group"
+                            role="group"
+                            aria-label={`Roster image ${index + 1} of ${rosterPreviewImages.length}`}
+                          >
+                            {isSafeRosterPreviewUrl(preview) ? (
+                              <img
+                                src={preview}
+                                alt={`Roster image ${index + 1} of ${rosterPreviewImages.length} preview`}
+                                className="max-h-48 w-full rounded-xl border border-slate-200 object-contain"
+                              />
+                            ) : (
+                              <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 text-center text-sm text-slate-500">
+                                Preview unavailable
+                              </div>
+                            )}
+                          </div>
+                          );
+                        })}
+                      </div>
                     )}
 
-                    {rosterFile && parsedRosterNames.length === 0 && (
+                    {rosterFiles.length > 0 && parsedRosterNames.length === 0 && (
                       <button onClick={handleParseRoster} disabled={isParsingRoster} className="btn-primary w-full disabled:opacity-50">
-                        {isParsingRoster ? "Reading roster..." : "Parse Roster with Groq"}
+                        {isParsingRoster ? `Reading rosters (${rosterFiles.length} images)...` : `Parse Rosters with Groq (${rosterFiles.length} images)`}
                       </button>
                     )}
 
