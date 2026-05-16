@@ -360,6 +360,13 @@ export default function TeacherDashboard() {
   }, [rosterPreviewImages]);
 
   useEffect(() => {
+    const unsafePreviewUrls = rosterPreviewImages.filter((preview) => !isSafeRosterPreviewUrl(preview));
+    if (unsafePreviewUrls.length > 0) {
+      console.warn("Rejected unexpected roster preview URLs.", unsafePreviewUrls);
+    }
+  }, [rosterPreviewImages]);
+
+  useEffect(() => {
     return () => {
       revokeObjectUrls(rosterPreviewImagesRef.current);
     };
@@ -730,10 +737,17 @@ export default function TeacherDashboard() {
     setRosterParseError("");
     try {
       const allNames: string[] = [];
-      for (const file of rosterFiles) {
-        const imageBase64 = await fileToBase64(file);
-        const names = await parseRosterImage({ imageBase64, mimeType: file.type });
-        allNames.push(...names);
+      for (const [index, file] of rosterFiles.entries()) {
+        try {
+          const imageBase64 = await fileToBase64(file);
+          const names = await parseRosterImage({ imageBase64, mimeType: file.type });
+          allNames.push(...names);
+        } catch (error) {
+          const details = error instanceof Error && error.message ? `: ${error.message}` : "";
+          throw new Error(
+            `Could not parse roster image ${index + 1} of ${rosterFiles.length} after processing ${index} image${index === 1 ? "" : "s"}${details}`,
+          );
+        }
       }
       // Deduplicate names across all images (case-insensitive, preserves first occurrence)
       const seenNames = new Set<string>();
@@ -1604,9 +1618,6 @@ export default function TeacherDashboard() {
                                 Preview unavailable
                               </div>
                             )}
-                            <div className="absolute inset-0 rounded-xl flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors" aria-hidden="true">
-                              <span className="text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity">Image {index + 1}</span>
-                            </div>
                           </div>
                         ))}
                       </div>
