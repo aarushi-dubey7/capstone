@@ -356,6 +356,10 @@ export default function TeacherDashboard() {
   }, [initBellSchedules]);
 
   useEffect(() => {
+    rosterPreviewImagesRef.current = rosterPreviewImages;
+  }, [rosterPreviewImages]);
+
+  useEffect(() => {
     return () => {
       revokeObjectUrls(rosterPreviewImagesRef.current);
     };
@@ -713,7 +717,6 @@ export default function TeacherDashboard() {
   function applyRosterFiles(files: File[]) {
     revokeObjectUrls(rosterPreviewImagesRef.current);
     const previewImages = files.map((file) => URL.createObjectURL(file));
-    rosterPreviewImagesRef.current = previewImages;
     setRosterFiles(files);
     setParsedRosterNames([]);
     setRosterSelections({});
@@ -1590,12 +1593,16 @@ export default function TeacherDashboard() {
                             role="group"
                             aria-label={`Roster image ${index + 1} of ${rosterPreviewImages.length}`}
                           >
-                            {isSafeRosterPreviewUrl(preview) && (
+                            {isSafeRosterPreviewUrl(preview) ? (
                               <img
                                 src={preview}
                                 alt={`Roster image ${index + 1} of ${rosterPreviewImages.length} preview`}
                                 className="max-h-48 w-full rounded-xl border border-slate-200 object-contain"
                               />
+                            ) : (
+                              <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 text-center text-sm text-slate-500">
+                                Preview unavailable
+                              </div>
                             )}
                             <div className="absolute inset-0 rounded-xl flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors" aria-hidden="true">
                               <span className="text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity">Image {index + 1}</span>
