@@ -65,6 +65,19 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function revokeObjectUrls(urls: string[]) {
+  urls.forEach((url) => URL.revokeObjectURL(url));
+}
+
+function getRosterPreviewKey(file: File | undefined, index: number) {
+  if (!file) return `roster-preview-${index}`;
+  return `${file.name}-${file.lastModified}-${file.size}`;
+}
+
+function isSafeRosterPreviewUrl(url: string) {
+  return url.startsWith("blob:");
+}
+
 function statusBadge(status: string) {
   if (status === "present") return "bg-emerald-100 text-emerald-700";
   if (status === "absent") return "bg-red-100 text-red-700";
@@ -214,6 +227,7 @@ function AuthPanel({
 export default function TeacherDashboard() {
   const navigate = useNavigate();
   const rosterFileRef = useRef<HTMLInputElement>(null);
+  const rosterPreviewImagesRef = useRef<string[]>([]);
   const [teacherId, setTeacherId] = useState<Id<"teachers"> | null>(() => {
     const stored = getStoredTeacherId();
     return stored ? (stored as Id<"teachers">) : null;
@@ -341,12 +355,11 @@ export default function TeacherDashboard() {
     initBellSchedules();
   }, [initBellSchedules]);
 
-  // Cleanup object URLs to prevent memory leaks
   useEffect(() => {
     return () => {
-      rosterPreviewImages.forEach(url => URL.revokeObjectURL(url));
+      revokeObjectUrls(rosterPreviewImagesRef.current);
     };
-  }, [rosterPreviewImages]);
+  }, []);
 
   useEffect(() => {
     if (!loginSubmitted || loginResult === undefined) return;
@@ -698,14 +711,14 @@ export default function TeacherDashboard() {
   }
 
   function applyRosterFiles(files: File[]) {
-    // Revoke previous object URLs to prevent memory leak
-    rosterPreviewImages.forEach(url => URL.revokeObjectURL(url));
-    
+    revokeObjectUrls(rosterPreviewImagesRef.current);
+    const previewImages = files.map((file) => URL.createObjectURL(file));
+    rosterPreviewImagesRef.current = previewImages;
     setRosterFiles(files);
     setParsedRosterNames([]);
     setRosterSelections({});
     setRosterParseError("");
-    setRosterPreviewImages(files.map(file => URL.createObjectURL(file)));
+    setRosterPreviewImages(previewImages);
   }
 
   async function handleParseRoster() {
@@ -747,8 +760,8 @@ export default function TeacherDashboard() {
         linkedStudentId: (rosterSelections[match.displayName] || null) as Id<"students"> | null,
       })),
     });
-    // Revoke object URLs to prevent memory leak
-    rosterPreviewImages.forEach(url => URL.revokeObjectURL(url));
+    revokeObjectUrls(rosterPreviewImagesRef.current);
+    rosterPreviewImagesRef.current = [];
     setRosterFiles([]);
     setRosterPreviewImages([]);
     setParsedRosterNames([]);
@@ -1571,8 +1584,19 @@ export default function TeacherDashboard() {
                     {rosterPreviewImages.length > 0 && (
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
                         {rosterPreviewImages.map((preview, index) => (
-                          <div key={index} className="relative group" role="group" aria-label={`Roster image ${index + 1} of ${rosterPreviewImages.length}`}>
-                            <img src={preview} alt={`Roster preview ${index + 1}`} className="max-h-48 rounded-xl border border-slate-200 object-contain w-full" />
+                          <div
+                            key={getRosterPreviewKey(rosterFiles[index], index)}
+                            className="relative group"
+                            role="group"
+                            aria-label={`Roster image ${index + 1} of ${rosterPreviewImages.length}`}
+                          >
+                            {isSafeRosterPreviewUrl(preview) && (
+                              <img
+                                src={preview}
+                                alt={`Roster image ${index + 1} of ${rosterPreviewImages.length} preview`}
+                                className="max-h-48 w-full rounded-xl border border-slate-200 object-contain"
+                              />
+                            )}
                             <div className="absolute inset-0 rounded-xl flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors" aria-hidden="true">
                               <span className="text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity">Image {index + 1}</span>
                             </div>
