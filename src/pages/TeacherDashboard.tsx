@@ -744,9 +744,7 @@ export default function TeacherDashboard() {
           allNames.push(...names);
         } catch (error) {
           const details = error instanceof Error && error.message ? `: ${error.message}` : "";
-          throw new Error(
-            `Could not parse roster image ${index + 1} of ${rosterFiles.length} after processing ${index} image${index === 1 ? "" : "s"}${details}`,
-          );
+          throw new Error(`Failed to parse image ${index + 1} of ${rosterFiles.length}${details}`);
         }
       }
       // Deduplicate names across all images (case-insensitive, preserves first occurrence)
@@ -1600,9 +1598,11 @@ export default function TeacherDashboard() {
 
                     {rosterPreviewImages.length > 0 && (
                       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-                        {rosterPreviewImages.map((preview, index) => (
+                        {rosterPreviewImages.map((preview, index) => {
+                          const previewFile = index < rosterFiles.length ? rosterFiles[index] : undefined;
+                          return (
                           <div
-                            key={getRosterPreviewKey(rosterFiles[index], index)}
+                            key={getRosterPreviewKey(previewFile, index)}
                             className="relative group"
                             role="group"
                             aria-label={`Roster image ${index + 1} of ${rosterPreviewImages.length}`}
@@ -1619,7 +1619,8 @@ export default function TeacherDashboard() {
                               </div>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 
