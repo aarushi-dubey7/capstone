@@ -1,7 +1,50 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-const DAY_LABELS = ["Day 1", "Day 2", "Day 3", "Day 4"];
+const DAY_LABELS = ["Day 1", "Day 2", "Day 3", "Day 4"] as const;
+const ROTATION_BLOCK_OPTIONS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const ROTATION_DAY_SLOTS = {
+  "Day 1": [
+    { timeRange: "8:17-9:13", label: "A" },
+    { timeRange: "9:15-10:08", label: "B" },
+    { timeRange: "10:10-11:03", label: "C" },
+    { timeRange: "11:05-11:35", label: "EP 1/Lunch" },
+    { timeRange: "11:40-12:10", label: "EP 2/Lunch" },
+    { timeRange: "12:12-1:05", label: "E" },
+    { timeRange: "1:07-2:00", label: "F" },
+    { timeRange: "2:02-2:55", label: "G" },
+  ],
+  "Day 2": [
+    { timeRange: "8:17-9:13", label: "B" },
+    { timeRange: "9:15-10:08", label: "C" },
+    { timeRange: "10:10-11:03", label: "D" },
+    { timeRange: "11:05-11:35", label: "EP 1/Lunch" },
+    { timeRange: "11:40-12:10", label: "EP 2/Lunch" },
+    { timeRange: "12:12-1:05", label: "F" },
+    { timeRange: "1:07-2:00", label: "G" },
+    { timeRange: "2:02-2:55", label: "H" },
+  ],
+  "Day 3": [
+    { timeRange: "8:17-9:13", label: "C" },
+    { timeRange: "9:15-10:08", label: "D" },
+    { timeRange: "10:10-11:03", label: "A" },
+    { timeRange: "11:05-11:35", label: "EP 1/Lunch" },
+    { timeRange: "11:40-12:10", label: "EP 2/Lunch" },
+    { timeRange: "12:12-1:05", label: "G" },
+    { timeRange: "1:07-2:00", label: "H" },
+    { timeRange: "2:02-2:55", label: "E" },
+  ],
+  "Day 4": [
+    { timeRange: "8:17-9:13", label: "D" },
+    { timeRange: "9:15-10:08", label: "A" },
+    { timeRange: "10:10-11:03", label: "B" },
+    { timeRange: "11:05-11:35", label: "EP 1/Lunch" },
+    { timeRange: "11:40-12:10", label: "EP 2/Lunch" },
+    { timeRange: "12:12-1:05", label: "H" },
+    { timeRange: "1:07-2:00", label: "E" },
+    { timeRange: "2:02-2:55", label: "F" },
+  ],
+} as const;
 
 function now() {
   return Date.now();
@@ -35,6 +78,7 @@ export const create = mutation({
     block: v.string(),
     room: v.string(),
     grade: v.optional(v.string()),
+    rotationBlock: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const validBlocks = ["A", "B", "C", "D", "E", "F", "G", "H", "EP1", "EP2"];
@@ -47,6 +91,7 @@ export const create = mutation({
       block: args.block.trim().toUpperCase(),
       room: args.room.trim(),
       grade: args.grade?.trim() || undefined,
+      rotationBlock: args.rotationBlock?.trim() || undefined,
       active: true,
       createdAt: now(),
       updatedAt: now(),
@@ -62,6 +107,7 @@ export const update = mutation({
     block: v.optional(v.string()),
     room: v.optional(v.string()),
     grade: v.optional(v.string()),
+    rotationBlock: v.optional(v.string()),
     active: v.optional(v.boolean()),
   },
   handler: async (ctx, { classId, ...rest }) => {
@@ -78,6 +124,7 @@ export const update = mutation({
     }
     if (rest.room !== undefined) patch.room = rest.room.trim();
     if (rest.grade !== undefined) patch.grade = rest.grade.trim() || undefined;
+    if (rest.rotationBlock !== undefined) patch.rotationBlock = rest.rotationBlock.trim() || undefined;
     if (rest.active !== undefined) patch.active = rest.active;
     await ctx.db.patch(classId, patch);
   },
@@ -363,39 +410,41 @@ export const getDayAssignments = query({
     teacherId: v.id("teachers"),
   },
   handler: async (ctx, { teacherId }) => {
-    const [assignmentsByDay, classes] = await Promise.all([
-      Promise.all(
-        DAY_LABELS.map(async (dayLabel) =>
-          ctx.db
-            .query("teacherDayBlocks")
-            .withIndex("by_teacherId_and_dayLabel", (q) => q.eq("teacherId", teacherId).eq("dayLabel", dayLabel))
-            .collect(),
-        ),
-      ),
-      ctx.db
-        .query("teacherClasses")
-        .withIndex("by_teacherId", (q) => q.eq("teacherId", teacherId))
-        .collect(),
-    ]);
+    const classes = await ctx.db
+      .query("teacherClasses")
+      .withIndex("by_teacherId", (q) => q.eq("teacherId", teacherId))
+      .collect();
 
-    const classMap = new Map(classes.map((classDoc) => [classDoc._id.toString(), classDoc]));
-    const filtered = assignmentsByDay.flat();
-    const grouped: Record<string, Array<{ _id: string; blockLabel: string; classId: string; className: string }>> = {};
+    const classByRotationBlock = new Map(
+      classes
+        .filter((classDoc) => classDoc.rotationBlock && ROTATION_BLOCK_OPTIONS.includes(classDoc.rotationBlock))
+        .map((classDoc) => [classDoc.rotationBlock!, classDoc]),
+    );
 
-    for (const entry of filtered) {
-      const classDoc = classMap.get(entry.classId.toString());
-      if (!classDoc) continue;
-      if (!grouped[entry.dayLabel]) grouped[entry.dayLabel] = [];
-      grouped[entry.dayLabel].push({
-        _id: entry._id,
-        blockLabel: entry.blockLabel,
-        classId: entry.classId,
-        className: classDoc.name,
+    const grouped: Record<
+      string,
+      Array<{
+        timeRange: string;
+        blockLabel: string;
+        classId: string | null;
+        className: string | null;
+        room: string | null;
+        subject: string | null;
+      }>
+    > = {};
+
+    for (const dayLabel of DAY_LABELS) {
+      grouped[dayLabel] = ROTATION_DAY_SLOTS[dayLabel].map((slot) => {
+        const classDoc = classByRotationBlock.get(slot.label) ?? null;
+        return {
+          timeRange: slot.timeRange,
+          blockLabel: slot.label,
+          classId: classDoc?._id ?? null,
+          className: classDoc?.name ?? null,
+          room: classDoc?.room ?? null,
+          subject: classDoc?.subject ?? null,
+        };
       });
-    }
-
-    for (const dayLabel of Object.keys(grouped)) {
-      grouped[dayLabel].sort((a, b) => a.blockLabel.localeCompare(b.blockLabel));
     }
 
     return grouped;

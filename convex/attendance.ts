@@ -4,6 +4,12 @@ import type { Doc, Id } from "./_generated/dataModel";
 
 const DEFAULT_TARDY_THRESHOLD = 3;
 const DEFAULT_REMINDER_MINUTES = 15;
+const ROTATION_DAY_SLOTS = {
+  "Day 1": ["A", "B", "C", "EP 1/Lunch", "EP 2/Lunch", "E", "F", "G"],
+  "Day 2": ["B", "C", "D", "EP 1/Lunch", "EP 2/Lunch", "F", "G", "H"],
+  "Day 3": ["C", "D", "A", "EP 1/Lunch", "EP 2/Lunch", "G", "H", "E"],
+  "Day 4": ["D", "A", "B", "EP 1/Lunch", "EP 2/Lunch", "H", "E", "F"],
+} as const;
 
 const attendanceStatusValidator = v.union(
   v.literal("present"),
@@ -145,18 +151,29 @@ async function getTeacherAssignmentContext(
 
   const classMap = new Map(teacherClasses.map((classDoc) => [classDoc._id.toString(), classDoc]));
   const effectiveDayLabel = args.dayLabel ?? rotation?.dayLabel ?? null;
-  const assignments = effectiveDayLabel
-    ? await ctx.db
-        .query("teacherDayBlocks")
-        .withIndex("by_teacherId_and_dayLabel", (q) =>
-          q.eq("teacherId", args.teacherId).eq("dayLabel", effectiveDayLabel),
-        )
-        .collect()
+  const slotLabels = effectiveDayLabel
+    ? [...(ROTATION_DAY_SLOTS[effectiveDayLabel as keyof typeof ROTATION_DAY_SLOTS] ?? [])]
     : [];
-  const blockOptions = uniqueLabels([
-    ...(bellSchedule?.blocks.map((block) => block.label) ?? []),
-    ...assignments.map((assignment) => assignment.blockLabel),
-  ]);
+  const assignments = slotLabels
+    .map((blockLabel) => {
+      const classDoc =
+        teacherClasses.find((entry) => entry.rotationBlock === blockLabel) ?? null;
+      return classDoc
+        ? {
+            _id: `${args.teacherId.toString()}-${effectiveDayLabel}-${blockLabel}` as Id<"teacherDayBlocks">,
+            _creationTime: 0,
+            teacherId: args.teacherId,
+            dayLabel: effectiveDayLabel!,
+            blockLabel,
+            classId: classDoc._id,
+            updatedAt: classDoc.updatedAt,
+          }
+        : null;
+    })
+    .filter((assignment): assignment is NonNullable<typeof assignment> => assignment !== null);
+  const blockOptions = slotLabels.length
+    ? uniqueLabels(slotLabels)
+    : uniqueLabels(bellSchedule?.blocks.map((block) => block.label) ?? []);
   const selectedBlockLabel =
     args.blockLabel ??
     assignments.find((assignment) => classMap.has(assignment.classId.toString()))?.blockLabel ??

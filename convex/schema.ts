@@ -84,6 +84,7 @@ export default defineSchema({
     block: v.string(), // "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "EP1" | "EP2"
     room: v.string(),
     grade: v.optional(v.string()),
+    rotationBlock: v.optional(v.string()),
     active: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),

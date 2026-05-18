@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -12,7 +12,51 @@ type RosterFilter = "all" | "unresolved" | "absent" | "resolved" | "tardy";
 type ManualStatus = "present" | "absent" | "excused";
 type AuthMode = "login" | "register";
 
-const DAY_OPTIONS = ["Day 1", "Day 2", "Day 3", "Day 4"];
+const DAY_OPTIONS = ["Day 1", "Day 2", "Day 3", "Day 4"] as const;
+type DayOption = (typeof DAY_OPTIONS)[number];
+const ROTATION_BLOCK_OPTIONS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const ROTATION_DAY_SLOTS = {
+  "Day 1": [
+    { timeRange: "8:17-9:13", label: "A" },
+    { timeRange: "9:15-10:08", label: "B" },
+    { timeRange: "10:10-11:03", label: "C" },
+    { timeRange: "11:05-11:35", label: "EP 1/Lunch" },
+    { timeRange: "11:40-12:10", label: "EP 2/Lunch" },
+    { timeRange: "12:12-1:05", label: "E" },
+    { timeRange: "1:07-2:00", label: "F" },
+    { timeRange: "2:02-2:55", label: "G" },
+  ],
+  "Day 2": [
+    { timeRange: "8:17-9:13", label: "B" },
+    { timeRange: "9:15-10:08", label: "C" },
+    { timeRange: "10:10-11:03", label: "D" },
+    { timeRange: "11:05-11:35", label: "EP 1/Lunch" },
+    { timeRange: "11:40-12:10", label: "EP 2/Lunch" },
+    { timeRange: "12:12-1:05", label: "F" },
+    { timeRange: "1:07-2:00", label: "G" },
+    { timeRange: "2:02-2:55", label: "H" },
+  ],
+  "Day 3": [
+    { timeRange: "8:17-9:13", label: "C" },
+    { timeRange: "9:15-10:08", label: "D" },
+    { timeRange: "10:10-11:03", label: "A" },
+    { timeRange: "11:05-11:35", label: "EP 1/Lunch" },
+    { timeRange: "11:40-12:10", label: "EP 2/Lunch" },
+    { timeRange: "12:12-1:05", label: "G" },
+    { timeRange: "1:07-2:00", label: "H" },
+    { timeRange: "2:02-2:55", label: "E" },
+  ],
+  "Day 4": [
+    { timeRange: "8:17-9:13", label: "D" },
+    { timeRange: "9:15-10:08", label: "A" },
+    { timeRange: "10:10-11:03", label: "B" },
+    { timeRange: "11:05-11:35", label: "EP 1/Lunch" },
+    { timeRange: "11:40-12:10", label: "EP 2/Lunch" },
+    { timeRange: "12:12-1:05", label: "H" },
+    { timeRange: "1:07-2:00", label: "E" },
+    { timeRange: "2:02-2:55", label: "F" },
+  ],
+} as const;
 const WEEKDAYS: Weekday[] = ["monday", "tuesday", "wednesday", "thursday", "friday"];
 
 function todayStr(date = new Date()) {
@@ -212,6 +256,7 @@ function AuthPanel({
 }
 
 export default function TeacherDashboard() {
+  const location = useLocation();
   const navigate = useNavigate();
   const rosterFileRef = useRef<HTMLInputElement>(null);
   const [teacherId, setTeacherId] = useState<Id<"teachers"> | null>(() => {
@@ -227,7 +272,6 @@ export default function TeacherDashboard() {
   const [authError, setAuthError] = useState("");
   const [loginSubmitted, setLoginSubmitted] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-
   const [selectedClassId, setSelectedClassId] = useState<Id<"teacherClasses"> | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<Id<"students"> | null>(null);
   const [selectedBlockLabel, setSelectedBlockLabel] = useState("");
@@ -241,6 +285,8 @@ export default function TeacherDashboard() {
   const [quickActivityStudentId, setQuickActivityStudentId] = useState<Id<"students"> | null>(null);
   const [quickActivityLabel, setQuickActivityLabel] = useState("");
   const [settingsForm, setSettingsForm] = useState({ tardyThreshold: "3", reminderMinutesAfterStart: "15" });
+  const [editingRotation, setEditingRotation] = useState(false);
+  const [rotationLabel, setRotationLabel] = useState("");
   const [selectedBellType, setSelectedBellType] = useState("Standard");
   const [editingWeek, setEditingWeek] = useState(false);
   const [weekForm, setWeekForm] = useState<Record<Weekday, string>>({
@@ -254,12 +300,12 @@ export default function TeacherDashboard() {
   const [roomName, setRoomName] = useState("");
   const [roomUuid, setRoomUuid] = useState("");
   const [roomDeviceName, setRoomDeviceName] = useState("");
-  const [classForm, setClassForm] = useState({ name: "", block: "", room: "", grade: "" });
-  const [newClassForm, setNewClassForm] = useState({ name: "", block: "", room: "", grade: "" });
+  const [isEditingClassDetails, setIsEditingClassDetails] = useState(false);
+  const [classForm, setClassForm] = useState({ name: "", subject: "", room: "", grade: "", rotationBlock: "" });
+  const [newClassForm, setNewClassForm] = useState({ name: "", subject: "", room: "", grade: "", rotationBlock: "" });
   const [manualEntryName, setManualEntryName] = useState("");
   const [manualLinkedStudentId, setManualLinkedStudentId] = useState("");
   const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
-  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, Record<string, string>>>({});
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [rosterPreviewImage, setRosterPreviewImage] = useState<string | null>(null);
@@ -268,8 +314,10 @@ export default function TeacherDashboard() {
   const [rosterSelections, setRosterSelections] = useState<Record<string, string>>({});
   const [rosterParseError, setRosterParseError] = useState("");
   const [isParsingRoster, setIsParsingRoster] = useState(false);
+  const [isRosterDragActive, setIsRosterDragActive] = useState(false);
 
   const teacherEmail = authEmailPrefix.trim() ? `${authEmailPrefix.trim().toLowerCase()}@bhpsnj.org` : "";
+  const isSettingsPage = location.pathname === "/teacher/settings";
 
   const loginResult = useQuery(
     api.teachers.login,
@@ -320,7 +368,6 @@ export default function TeacherDashboard() {
   const addManualRosterEntry = useMutation(api.teacherClasses.addManualRosterEntry);
   const linkRosterEntry = useMutation(api.teacherClasses.linkRosterEntry);
   const removeRosterEntry = useMutation(api.teacherClasses.removeRosterEntry);
-  const saveDayAssignments = useMutation(api.teacherClasses.saveDayAssignments);
   const setStudentStatus = useMutation(api.attendance.setStudentStatus);
   const batchMarkClassUnresolvedAbsent = useMutation(api.attendance.batchMarkClassUnresolvedAbsent);
   const updateSettings = useMutation(api.attendance.updateSettings);
@@ -384,10 +431,12 @@ export default function TeacherDashboard() {
     if (classDetails?.class) {
       setClassForm({
         name: classDetails.class.name,
-        block: classDetails.class.block,
+        subject: classDetails.class.subject,
         room: classDetails.class.room,
         grade: classDetails.class.grade ?? "",
+        rotationBlock: classDetails.class.rotationBlock ?? "",
       });
+      setIsEditingClassDetails(false);
     }
   }, [classDetails?.class]);
 
@@ -415,27 +464,6 @@ export default function TeacherDashboard() {
       setSelectedBlockLabel(teacherRoster.selectedBlockLabel ?? "");
     }
   }, [selectedBlockLabel, teacherRoster]);
-
-  const blockLabels = useMemo(
-    () =>
-      [...new Set(bellSchedules.flatMap((schedule) => schedule.blocks.map((block) => block.label)))]
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b)),
-    [bellSchedules],
-  );
-
-  useEffect(() => {
-    if (blockLabels.length === 0) return;
-    const nextDrafts: Record<string, Record<string, string>> = {};
-    for (const day of DAY_OPTIONS) {
-      nextDrafts[day] = {};
-      for (const block of blockLabels) {
-        const existing = (dayAssignments[day] ?? []).find((assignment) => assignment.blockLabel === block);
-        nextDrafts[day][block] = existing?.classId ?? "";
-      }
-    }
-    setAssignmentDrafts(nextDrafts);
-  }, [blockLabels, dayAssignments]);
 
   useEffect(() => {
     if (rosterMatches.length === 0) return;
@@ -512,6 +540,21 @@ export default function TeacherDashboard() {
     [selectedStudentId, teacherStudents],
   );
 
+  const rotationBlockByDay = useMemo(
+    () =>
+      DAY_OPTIONS.reduce(
+        (accumulator, dayLabel) => {
+          accumulator[dayLabel] = ROTATION_DAY_SLOTS[dayLabel].map((slot) => ({
+            timeRange: slot.timeRange,
+            blockLabel: slot.label,
+          }));
+          return accumulator;
+        },
+        {} as Record<DayOption, Array<{ timeRange: string; blockLabel: string }>>,
+      ),
+    [],
+  );
+
   const schedDays = useMemo(
     () => [...new Set(studentSchedule.map((entry) => entry.dayOfWeek))].sort(),
     [studentSchedule],
@@ -523,7 +566,7 @@ export default function TeacherDashboard() {
         .map((classDoc) => ({
           room: classDoc.room,
           className: classDoc.name,
-          block: classDoc.block,
+          subject: classDoc.subject,
           grade: classDoc.grade ?? null,
         }))
         .sort((a, b) => a.room.localeCompare(b.room)),
@@ -535,6 +578,7 @@ export default function TeacherDashboard() {
     [allLocations],
   );
 
+  const headerDayLabel = todayRotation?.dayLabel;
 
   async function handleTeacherSubmit() {
     setAuthError("");
@@ -583,6 +627,15 @@ export default function TeacherDashboard() {
     setEditingWeek(true);
   }
 
+  async function saveRotation() {
+    await setRotation({
+      date: todayStr(),
+      dayLabel: rotationLabel || undefined,
+      bellScheduleType: selectedBellType,
+    });
+    setEditingRotation(false);
+    setRotationLabel("");
+  }
 
   async function saveWeekSetup() {
     await setWeekMap({
@@ -646,17 +699,18 @@ export default function TeacherDashboard() {
   }
 
   async function handleCreateClass() {
-    if (!teacherId || !newClassForm.name.trim() || !newClassForm.block.trim() || !newClassForm.room.trim()) {
+    if (!teacherId || !newClassForm.name.trim() || !newClassForm.subject.trim() || !newClassForm.room.trim()) {
       return;
     }
     const classId = await createTeacherClass({
       teacherId,
       name: newClassForm.name.trim(),
-      block: newClassForm.block.trim(),
+      subject: newClassForm.subject.trim(),
       room: newClassForm.room.trim(),
       grade: newClassForm.grade.trim() || undefined,
+      rotationBlock: newClassForm.rotationBlock || undefined,
     });
-    setNewClassForm({ name: "", block: "", room: "", grade: "" });
+    setNewClassForm({ name: "", subject: "", room: "", grade: "", rotationBlock: "" });
     setSelectedClassId(classId);
   }
 
@@ -665,10 +719,12 @@ export default function TeacherDashboard() {
     await updateTeacherClass({
       classId: selectedClassId,
       name: classForm.name.trim(),
-      block: classForm.block.trim(),
+      subject: classForm.subject.trim(),
       room: classForm.room.trim(),
       grade: classForm.grade.trim() || undefined,
+      rotationBlock: classForm.rotationBlock || undefined,
     });
+    setIsEditingClassDetails(false);
   }
 
   async function handleDeleteClass() {
@@ -679,11 +735,30 @@ export default function TeacherDashboard() {
   }
 
   function applyRosterFile(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setRosterParseError("Please use an image file for roster upload.");
+      return;
+    }
     setRosterFile(file);
     setParsedRosterNames([]);
     setRosterSelections({});
     setRosterParseError("");
     setRosterPreviewImage(URL.createObjectURL(file));
+  }
+
+  function handleRosterDrop(event: ReactDragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsRosterDragActive(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) applyRosterFile(file);
+  }
+
+  function handleRosterPaste(event: ReactClipboardEvent<HTMLDivElement>) {
+    const imageItem = Array.from(event.clipboardData.items).find((item) => item.type.startsWith("image/"));
+    const file = imageItem?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    applyRosterFile(file);
   }
 
   async function handleParseRoster() {
@@ -739,20 +814,6 @@ export default function TeacherDashboard() {
       linkedStudentId: linkedStudentId as Id<"students">,
     });
     setLinkSelections((current) => ({ ...current, [rosterEntryId.toString()]: "" }));
-  }
-
-  async function handleSaveAssignments(dayLabel: string) {
-    if (!teacherId) return;
-    await saveDayAssignments({
-      teacherId,
-      dayLabel,
-      assignments: blockLabels.map((blockLabel) => ({
-        blockLabel,
-        classId: assignmentDrafts[dayLabel]?.[blockLabel]
-          ? (assignmentDrafts[dayLabel][blockLabel] as Id<"teacherClasses">)
-          : null,
-      })),
-    });
   }
 
   async function applyManualStatus(studentId: Id<"students">, status: ManualStatus) {
@@ -838,128 +899,206 @@ export default function TeacherDashboard() {
     });
   }
 
-  function renderScheduleControls() {
+  function renderSettingsPanel() {
     return (
-      <div className="space-y-4">
-
-        <div className="card space-y-3">
-          <h3 className="font-semibold text-slate-800">Bell Schedule</h3>
-          <p className="text-xs text-slate-500">Change the format for special events.</p>
-          <div className="space-y-2">
-            {bellSchedules.map((schedule) => (
-              <button
-                key={schedule.type}
-                onClick={() => {
-                  setSelectedBellType(schedule.type);
-                  setRotation({
-                    date: todayStr(),
-                    bellScheduleType: schedule.type,
-                    dayLabel: todayRotation?.dayLabel,
-                  });
-                }}
-                className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-sm font-medium transition-all ${
-                  selectedBellType === schedule.type
-                    ? "bg-brand-50 text-brand-800 ring-2 ring-brand-500/20 border-brand-200"
-                    : "border-slate-200 text-slate-600 hover:border-brand-300"
-                }`}
-              >
-                {schedule.type}
-                {selectedBellType === schedule.type && <div className="h-2 w-2 rounded-full bg-brand-600" />}
-              </button>
-            ))}
+      <div className={isSettingsPage ? "space-y-6" : "mt-6 space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Settings</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Manage school-wide rotation helpers and schedule formats here.
+            </p>
           </div>
+          <button
+            onClick={() => navigate("/teacher")}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+          >
+            Back to Dashboard
+          </button>
         </div>
 
-        <div className="card space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800">Week Setup</h3>
-            <button onClick={() => (editingWeek ? setEditingWeek(false) : openWeekForm())} className="text-xs text-brand-600 underline">
-              {editingWeek ? "Cancel" : "Edit"}
-            </button>
-          </div>
-
-          {!editingWeek && weekMapping ? (
-            <div className="space-y-1">
-              {WEEKDAYS.map((day) => {
-                const label = weekMapping[day];
-                return label ? (
-                  <div key={day} className="flex justify-between text-sm">
-                    <span className="capitalize text-slate-500">{day}</span>
-                    <span className="font-medium text-slate-700">{label}</span>
-                  </div>
-                ) : null;
-              })}
-            </div>
-          ) : !editingWeek ? (
-            <p className="text-xs text-slate-400">No week mapping set. Click Edit to assign Day 1–4 to each weekday.</p>
-          ) : (
-            <div className="space-y-2">
-              {WEEKDAYS.map((day) => (
-                <div key={day} className="flex items-center gap-3">
-                  <span className="w-24 text-sm font-medium capitalize text-slate-600">{day}</span>
-                  <select
-                    value={weekForm[day]}
-                    onChange={(event) =>
-                      setWeekForm((current) => ({ ...current, [day]: event.target.value }))
-                    }
-                    className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  >
-                    <option value="">Not set</option>
-                    {DAY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-              <button onClick={saveWeekSetup} className="btn-primary w-full px-4 py-2 text-sm">
-                Save Week Setup
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="card space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="card space-y-3">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold text-slate-800">Attendance Settings</h3>
               <InfoTooltip label="Use this section to control when tardy alerts appear and how long the system waits before reminding teachers about unresolved students." />
             </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Tardy Threshold
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={settingsForm.tardyThreshold}
-                onChange={(event) =>
-                  setSettingsForm((current) => ({ ...current, tardyThreshold: event.target.value }))
-                }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Tardy Threshold
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={settingsForm.tardyThreshold}
+                  onChange={(event) =>
+                    setSettingsForm((current) => ({ ...current, tardyThreshold: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Reminder Minutes After Start
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={settingsForm.reminderMinutesAfterStart}
+                  onChange={(event) =>
+                    setSettingsForm((current) => ({ ...current, reminderMinutesAfterStart: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Reminder Minutes After Start
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={settingsForm.reminderMinutesAfterStart}
-                onChange={(event) =>
-                  setSettingsForm((current) => ({ ...current, reminderMinutesAfterStart: event.target.value }))
-                }
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
+            <button onClick={saveSettings} className="btn-primary w-full">
+              Save Settings
+            </button>
+          </div>
+
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-slate-800">Today's Day</h3>
+              <button
+                onClick={() => {
+                  setEditingRotation(!editingRotation);
+                  setRotationLabel(todayRotation?.dayLabel ?? "");
+                }}
+                className="text-xs text-brand-600 underline"
+              >
+                {editingRotation ? "Cancel" : "Change"}
+              </button>
+            </div>
+
+            {!editingRotation && todayRotation && (
+              <div className="rounded-xl bg-brand-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-brand-600">Today</p>
+                <p className="mt-0.5 text-2xl font-bold text-brand-800">{todayRotation.dayLabel}</p>
+              </div>
+            )}
+
+            {(editingRotation || !todayRotation) && (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-500">What day is today?</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {DAY_OPTIONS.map((day) => (
+                    <button
+                      key={day}
+                      onClick={() => setRotationLabel(day)}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                        rotationLabel === day
+                          ? "border-brand-700 bg-brand-700 text-white"
+                          : "border-slate-300 text-slate-600 hover:border-brand-400"
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={saveRotation}
+                  disabled={!rotationLabel}
+                  className="btn-primary w-full px-4 py-2 text-sm disabled:opacity-40"
+                >
+                  Save
+                </button>
+              </div>
+            )}
+
+            {recentRotation.length > 0 && (
+              <div className="space-y-1 border-t border-slate-100 pt-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Recent</p>
+                {recentRotation.slice(0, 5).map((entry) => (
+                  <div key={entry._id.toString()} className="flex justify-between text-sm">
+                    <span className="text-slate-400">{entry.date}</span>
+                    <span className="font-medium text-slate-700">
+                      {entry.dayLabel} {entry.bellScheduleType && entry.bellScheduleType !== "Standard" ? `(${entry.bellScheduleType})` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card space-y-3">
+            <h3 className="font-semibold text-slate-800">Bell Schedule</h3>
+            <p className="text-xs text-slate-500">Change the format for special events.</p>
+            <div className="space-y-2">
+              {bellSchedules.map((schedule) => (
+                <button
+                  key={schedule.type}
+                  onClick={() => {
+                    setSelectedBellType(schedule.type);
+                    setRotation({
+                      date: todayStr(),
+                      bellScheduleType: schedule.type,
+                      dayLabel: todayRotation?.dayLabel,
+                    });
+                  }}
+                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-sm font-medium transition-all ${
+                    selectedBellType === schedule.type
+                      ? "bg-brand-50 text-brand-800 ring-2 ring-brand-500/20 border-brand-200"
+                      : "border-slate-200 text-slate-600 hover:border-brand-300"
+                  }`}
+                >
+                  {schedule.type}
+                  {selectedBellType === schedule.type && <div className="h-2 w-2 rounded-full bg-brand-600" />}
+                </button>
+              ))}
             </div>
           </div>
-          <button onClick={saveSettings} className="btn-primary w-full">
-            Save Settings
-          </button>
+
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-slate-800">Week Setup</h3>
+              <button onClick={() => (editingWeek ? setEditingWeek(false) : openWeekForm())} className="text-xs text-brand-600 underline">
+                {editingWeek ? "Cancel" : "Edit"}
+              </button>
+            </div>
+
+            {!editingWeek && weekMapping ? (
+              <div className="space-y-1">
+                {WEEKDAYS.map((day) => {
+                  const label = weekMapping[day];
+                  return label ? (
+                    <div key={day} className="flex justify-between text-sm">
+                      <span className="capitalize text-slate-500">{day}</span>
+                      <span className="font-medium text-slate-700">{label}</span>
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            ) : !editingWeek ? (
+              <p className="text-xs text-slate-400">No week mapping set. Click Edit to assign Day 1–4 to each weekday.</p>
+            ) : (
+              <div className="space-y-2">
+                {WEEKDAYS.map((day) => (
+                  <div key={day} className="flex items-center gap-3">
+                    <span className="w-24 text-sm font-medium capitalize text-slate-600">{day}</span>
+                    <select
+                      value={weekForm[day]}
+                      onChange={(event) =>
+                        setWeekForm((current) => ({ ...current, [day]: event.target.value }))
+                      }
+                      className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    >
+                      <option value="">Not set</option>
+                      {DAY_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+                <button onClick={saveWeekSetup} className="btn-primary w-full px-4 py-2 text-sm">
+                  Save Week Setup
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1012,7 +1151,7 @@ export default function TeacherDashboard() {
               onClick={() => navigate("/teacher/settings")}
               className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-brand-50 transition-colors hover:bg-white/20"
             >
-              Settings
+              {headerDayLabel ? `Rotation Day · ${headerDayLabel}` : "Rotation Day"}
             </button>
             <div className="flex gap-2">
               <button
@@ -1020,6 +1159,16 @@ export default function TeacherDashboard() {
                 className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/20"
               >
                 Home
+              </button>
+              <button
+                onClick={() => navigate("/teacher/settings")}
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+                  isSettingsPage
+                    ? "border-white/40 bg-white text-brand-800"
+                    : "border-white/20 bg-white/10 text-white hover:bg-white/20"
+                }`}
+              >
+                Settings
               </button>
               <button
                 onClick={handleLogout}
@@ -1033,36 +1182,40 @@ export default function TeacherDashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl px-5 py-6">
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          <SummaryCard value={teacherRoster?.summary.present ?? 0} label="Present" tone="text-emerald-600" />
-          <SummaryCard value={teacherRoster?.summary.absent ?? 0} label="Absent" tone="text-red-600" />
-          <SummaryCard value={teacherRoster?.summary.activityExcused ?? 0} label="Activity / Excused" tone="text-sky-600" />
-          <SummaryCard value={teacherRoster?.summary.unresolved ?? 0} label="Unresolved" tone="text-amber-600" />
-          <SummaryCard value={teacherRoster?.summary.tardy ?? 0} label="Tardy Today" tone="text-violet-600" />
-        </div>
+        {isSettingsPage ? (
+          renderSettingsPanel()
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+              <SummaryCard value={teacherRoster?.summary.present ?? 0} label="Present" tone="text-emerald-600" />
+              <SummaryCard value={teacherRoster?.summary.absent ?? 0} label="Absent" tone="text-red-600" />
+              <SummaryCard value={teacherRoster?.summary.activityExcused ?? 0} label="Activity / Excused" tone="text-sky-600" />
+              <SummaryCard value={teacherRoster?.summary.unresolved ?? 0} label="Unresolved" tone="text-amber-600" />
+              <SummaryCard value={teacherRoster?.summary.tardy ?? 0} label="Tardy Today" tone="text-violet-600" />
+            </div>
 
-        <div className="mt-6 inline-flex rounded-2xl bg-slate-200 p-1">
-          {([
-            ["attendance", "Attendance"],
-            ["classes", "Classes"],
-            ["schedules", "Schedules"],
-            ["rooms", "Rooms"],
-            ["movement", "Movement"],
-          ] as Array<[Tab, string]>).map(([value, label]) => (
-            <button
-              key={value}
-              onClick={() => setTab(value)}
-              className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors ${
-                tab === value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+            <div className="mt-6 inline-flex rounded-2xl bg-slate-200 p-1">
+              {([
+                ["attendance", "Attendance"],
+                ["classes", "Classes"],
+                ["schedules", "Schedules"],
+                ["rooms", "Rooms"],
+                ["movement", "Movement"],
+              ] as Array<[Tab, string]>).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => setTab(value)}
+                  className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors ${
+                    tab === value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
         {tab === "attendance" && (
-          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,2fr),360px]">
+          <div className="mt-6">
             <div className="space-y-6">
               {teacherRoster?.shouldShowReminder && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
@@ -1078,7 +1231,7 @@ export default function TeacherDashboard() {
                       {teacherRoster?.activeClass?.name ?? "No class assigned"}
                     </h2>
                     <p className="mt-1 text-sm text-slate-500">
-                      {teacherRoster?.dayLabel ?? "Set today’s day"} · {teacherRoster?.selectedBlockLabel ?? "Choose a block"}
+                      {teacherRoster?.dayLabel ?? "Set rotation day in Settings"} · {teacherRoster?.selectedBlockLabel ?? "Choose a block"}
                       {teacherRoster?.activeClass ? ` · Room ${teacherRoster.activeClass.room}` : ""}
                     </p>
                   </div>
@@ -1260,7 +1413,7 @@ export default function TeacherDashboard() {
                   </>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-500">
-                    Pick today’s day, assign a block to a class in the Classes tab, and this roster will light up.
+                    Set the rotation day in Settings, assign a block to a class in the Classes tab, and this roster will light up.
                   </div>
                 )}
               </div>
@@ -1302,8 +1455,6 @@ export default function TeacherDashboard() {
                 </div>
               </div>
             </div>
-
-            <div>{renderScheduleControls()}</div>
           </div>
         )}
 
@@ -1327,10 +1478,11 @@ export default function TeacherDashboard() {
                       }`}
                     >
                       <div className="font-semibold text-slate-900">{classDoc.name}</div>
-                      <div className="mt-1 text-sm text-slate-500">
-                        Block {classDoc.block} · Room {classDoc.room}
-                      </div>
-                    </button>
+                    <div className="mt-1 text-sm text-slate-500">
+                      {classDoc.subject} · Room {classDoc.room}
+                      {classDoc.rotationBlock ? ` · Block ${classDoc.rotationBlock}` : ""}
+                    </div>
+                  </button>
                   ))}
                   {teacherClasses.length === 0 && (
                     <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-400">
@@ -1349,23 +1501,13 @@ export default function TeacherDashboard() {
                   placeholder="Class name"
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
-                <select
-                  value={newClassForm.block}
-                  onChange={(event) => setNewClassForm((current) => ({ ...current, block: event.target.value }))}
+                <input
+                  type="text"
+                  value={newClassForm.subject}
+                  onChange={(event) => setNewClassForm((current) => ({ ...current, subject: event.target.value }))}
+                  placeholder="Subject"
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                >
-                  <option value="">Select Block</option>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                  <option value="D">D</option>
-                  <option value="E">E</option>
-                  <option value="F">F</option>
-                  <option value="G">G</option>
-                  <option value="H">H</option>
-                  <option value="EP1">EP1</option>
-                  <option value="EP2">EP2</option>
-                </select>
+                />
                 <div className="grid gap-3 md:grid-cols-2">
                   <input
                     type="text"
@@ -1381,6 +1523,18 @@ export default function TeacherDashboard() {
                     placeholder="Grade"
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
+                  <select
+                    value={newClassForm.rotationBlock}
+                    onChange={(event) => setNewClassForm((current) => ({ ...current, rotationBlock: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 md:col-span-2"
+                  >
+                    <option value="">Choose rotation block</option>
+                    {ROTATION_BLOCK_OPTIONS.map((block) => (
+                      <option key={block} value={block}>
+                        Block {block}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <button onClick={handleCreateClass} className="btn-primary w-full">
                   Add Class
@@ -1396,20 +1550,36 @@ export default function TeacherDashboard() {
                       {classDetails?.class.name ?? "Select a class"}
                     </h2>
                     <p className="mt-1 text-sm text-slate-500">
-                      {classDetails?.class.block ? `Block ${classDetails.class.block}` : "Class setup"} {classDetails?.class ? `· Room ${classDetails.class.room}` : ""}
+                      {classDetails?.class.subject ?? "Class setup"}
+                      {classDetails?.class ? ` · Room ${classDetails.class.room}` : ""}
+                      {classDetails?.class?.rotationBlock ? ` · Block ${classDetails.class.rotationBlock}` : ""}
                     </p>
                   </div>
                   {classDetails?.class && (
-                    <button
-                      onClick={handleDeleteClass}
-                      className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
-                    >
-                      Delete Class
-                    </button>
+                    <div className="flex gap-2">
+                      {!isEditingClassDetails && (
+                        <InfoTooltip label="Open Edit Details to update the class name, subject, room, grade, or rotation block." />
+                      )}
+                      <button
+                        onClick={() => setIsEditingClassDetails((current) => !current)}
+                        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+                      >
+                        {isEditingClassDetails ? "Close Editor" : "Edit Details"}
+                      </button>
+                      {isEditingClassDetails && (
+                        <button
+                          onClick={handleDeleteClass}
+                          className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+                        >
+                          Delete Class
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 
                 {classDetails?.class ? (
+                  isEditingClassDetails ? (
                   <div className="grid gap-3 md:grid-cols-2">
                     <input
                       type="text"
@@ -1418,23 +1588,13 @@ export default function TeacherDashboard() {
                       placeholder="Class name"
                       className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     />
-                    <select
-                      value={classForm.block}
-                      onChange={(event) => setClassForm((current) => ({ ...current, block: event.target.value }))}
+                    <input
+                      type="text"
+                      value={classForm.subject}
+                      onChange={(event) => setClassForm((current) => ({ ...current, subject: event.target.value }))}
+                      placeholder="Subject"
                       className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    >
-                      <option value="">Select Block</option>
-                      <option value="A">A</option>
-                      <option value="B">B</option>
-                      <option value="C">C</option>
-                      <option value="D">D</option>
-                      <option value="E">E</option>
-                      <option value="F">F</option>
-                      <option value="G">G</option>
-                      <option value="H">H</option>
-                      <option value="EP1">EP1</option>
-                      <option value="EP2">EP2</option>
-                    </select>
+                    />
                     <input
                       type="text"
                       value={classForm.room}
@@ -1449,10 +1609,23 @@ export default function TeacherDashboard() {
                       placeholder="Grade"
                       className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     />
+                    <select
+                      value={classForm.rotationBlock}
+                      onChange={(event) => setClassForm((current) => ({ ...current, rotationBlock: event.target.value }))}
+                      className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    >
+                      <option value="">Choose rotation block</option>
+                      {ROTATION_BLOCK_OPTIONS.map((block) => (
+                        <option key={block} value={block}>
+                          Block {block}
+                        </option>
+                      ))}
+                    </select>
                     <button onClick={handleUpdateClass} className="btn-primary md:col-span-2">
                       Save Class Details
                     </button>
                   </div>
+                  ) : null
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-400">
                     Choose a class from the left to manage its roster and teaching blocks.
@@ -1466,7 +1639,7 @@ export default function TeacherDashboard() {
                     <div className="flex items-center justify-between">
                       <div>
                         <h3 className="text-lg font-semibold text-slate-900">Roster Upload</h3>
-                        <p className="text-sm text-slate-500">Upload a roster image, let Groq read the names, then confirm the matches.</p>
+                        <p className="text-sm text-slate-500">Upload a roster image, drop one here, or paste from your clipboard, then confirm the matches.</p>
                       </div>
                       <button onClick={() => rosterFileRef.current?.click()} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700">
                         Choose Image
@@ -1481,6 +1654,41 @@ export default function TeacherDashboard() {
                           if (file) applyRosterFile(file);
                         }}
                       />
+                    </div>
+
+                    <div
+                      tabIndex={0}
+                      onPaste={handleRosterPaste}
+                      onDragEnter={(event) => {
+                        event.preventDefault();
+                        setIsRosterDragActive(true);
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        if (!isRosterDragActive) setIsRosterDragActive(true);
+                      }}
+                      onDragLeave={(event) => {
+                        event.preventDefault();
+                        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                        setIsRosterDragActive(false);
+                      }}
+                      onDrop={handleRosterDrop}
+                      onClick={() => rosterFileRef.current?.click()}
+                      className={`rounded-2xl border-2 border-dashed px-5 py-6 text-sm outline-none transition-colors ${
+                        isRosterDragActive
+                          ? "border-brand-500 bg-brand-50 text-brand-800"
+                          : "border-slate-300 bg-slate-50 text-slate-500 hover:border-brand-300 hover:bg-brand-50/50"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div className="font-semibold text-slate-800">Drop roster image here or click to choose a file</div>
+                          <div className="mt-1 text-xs text-slate-500">You can also click this box and press paste with an image from your clipboard.</div>
+                        </div>
+                        <div className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
+                          {rosterFile ? rosterFile.name : "PNG, JPG, or screenshot"}
+                        </div>
+                      </div>
                     </div>
 
                     {rosterPreviewImage && (
@@ -1646,7 +1854,7 @@ export default function TeacherDashboard() {
                     <div>
                       <h3 className="text-lg font-semibold text-slate-900">Day Block Planner</h3>
                       <p className="mt-1 text-sm text-slate-500">
-                        Choose which class you teach during each block on Day 1 through Day 4.
+                        Each day follows the fixed rotation pattern. Once each class has a home block, the planner fills in automatically.
                       </p>
                     </div>
 
@@ -1655,35 +1863,35 @@ export default function TeacherDashboard() {
                         <div key={dayLabel} className="rounded-2xl border border-slate-200 px-4 py-4">
                           <div className="mb-4 flex items-center justify-between">
                             <h4 className="font-semibold text-slate-900">{dayLabel}</h4>
-                            <button onClick={() => handleSaveAssignments(dayLabel)} className="btn-primary px-4 py-2 text-sm">
-                              Save {dayLabel}
-                            </button>
+                            <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                              Auto-filled from class blocks
+                            </span>
                           </div>
 
                           <div className="space-y-3">
-                            {blockLabels.map((blockLabel) => (
-                              <div key={blockLabel} className="grid gap-3 md:grid-cols-[180px,1fr] md:items-center">
-                                <div className="text-sm font-medium text-slate-600">{blockLabel}</div>
-                                <select
-                                  value={assignmentDrafts[dayLabel]?.[blockLabel] ?? ""}
-                                  onChange={(event) =>
-                                    setAssignmentDrafts((current) => ({
-                                      ...current,
-                                      [dayLabel]: {
-                                        ...(current[dayLabel] ?? {}),
-                                        [blockLabel]: event.target.value,
-                                      },
-                                    }))
-                                  }
-                                  className="rounded-xl border border-slate-300 px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                                >
-                                  <option value="">No class assigned</option>
-                                  {teacherClasses.map((classDoc) => (
-                                    <option key={classDoc._id.toString()} value={classDoc._id.toString()}>
-                                      {classDoc.name} · Room {classDoc.room}
-                                    </option>
-                                  ))}
-                                </select>
+                            {(dayAssignments[dayLabel] ?? rotationBlockByDay[dayLabel] ?? []).map((slot) => (
+                              <div
+                                key={`${dayLabel}-${slot.timeRange}-${slot.blockLabel}`}
+                                className="grid gap-3 rounded-2xl bg-slate-50 px-4 py-4 md:grid-cols-[120px,120px,1fr] md:items-center"
+                              >
+                                <div className="text-sm font-medium text-slate-500">{slot.timeRange}</div>
+                                <div className="text-sm font-semibold text-slate-700">{slot.blockLabel}</div>
+                                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                                  {"className" in slot && slot.className ? (
+                                    <div>
+                                      <div className="font-semibold text-slate-900">{slot.className}</div>
+                                      <div className="mt-1 text-slate-500">
+                                        {slot.subject ? `${slot.subject} · ` : ""}Room {slot.room}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="text-slate-400">
+                                      {slot.blockLabel.includes("Lunch")
+                                        ? "Fixed lunch / EP block"
+                                        : "No class assigned to this block yet"}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -1805,7 +2013,7 @@ export default function TeacherDashboard() {
                                   {day.entries.map((entry) => (
                                     <div key={`${day.date}-${entry.timestamp}`} className="flex flex-col gap-1 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
                                       <div>
-                                        {entry.period ?? "Block"} · {entry.locationName}
+                                        {entry.subject ?? "Class"} · {entry.locationName}
                                       </div>
                                       <div>
                                         {fmt(entry.timestamp)} {entry.isLate ? "· Late" : ""}
@@ -1953,7 +2161,7 @@ export default function TeacherDashboard() {
                     }`}
                   >
                     <div className="font-semibold text-slate-900">Room {entry.room}</div>
-                    <div className="mt-1 text-sm text-slate-500">{entry.className} · Block {entry.block}</div>
+                    <div className="mt-1 text-sm text-slate-500">{entry.className} · {entry.subject}</div>
                   </button>
                 ))}
               </div>
@@ -2028,6 +2236,8 @@ export default function TeacherDashboard() {
             </div>
             <AttendanceMap logs={movementLogs} students={movementStudents} />
           </div>
+        )}
+          </>
         )}
       </main>
     </div>
