@@ -329,20 +329,27 @@ export default function TeacherDashboard() {
       : "skip",
   );
   const teacherProfile = useQuery(api.teachers.getById, teacherId ? { teacherId } : "skip");
+  const authenticatedTeacherId = teacherProfile ? teacherId : null;
   const allStudents = useQuery(api.students.list) ?? [];
-  const teacherClasses = useQuery(api.teacherClasses.listForTeacher, teacherId ? { teacherId } : "skip") ?? [];
+  const teacherClasses = useQuery(
+    api.teacherClasses.listForTeacher,
+    authenticatedTeacherId ? { teacherId: authenticatedTeacherId } : "skip",
+  ) ?? [];
   const teacherStudents = useQuery(
     api.teacherClasses.getTeacherStudentDirectory,
-    teacherId ? { teacherId } : "skip",
+    authenticatedTeacherId ? { teacherId: authenticatedTeacherId } : "skip",
   ) ?? [];
   const classDetails = useQuery(
     api.teacherClasses.getClassDetails,
-    teacherId && selectedClassId ? { teacherId, classId: selectedClassId } : "skip",
+    authenticatedTeacherId && selectedClassId ? { teacherId: authenticatedTeacherId, classId: selectedClassId } : "skip",
   );
-  const dayAssignments = useQuery(api.teacherClasses.getDayAssignments, teacherId ? { teacherId } : "skip") ?? {};
+  const dayAssignments = useQuery(
+    api.teacherClasses.getDayAssignments,
+    authenticatedTeacherId ? { teacherId: authenticatedTeacherId } : "skip",
+  ) ?? {};
   const teacherRoster = useQuery(
     api.attendance.getTeacherRoster,
-    teacherId ? { teacherId, date: todayStr(), blockLabel: selectedBlockLabel || undefined } : "skip",
+    authenticatedTeacherId ? { teacherId: authenticatedTeacherId, date: todayStr(), blockLabel: selectedBlockLabel || undefined } : "skip",
   );
   const studentInsights = useQuery(
     api.students.getInsights,
@@ -412,8 +419,11 @@ export default function TeacherDashboard() {
   useEffect(() => {
     if (selectedClassId && !teacherClasses.some((classDoc) => classDoc._id.toString() === selectedClassId.toString())) {
       setSelectedClassId(null);
+      if (isEditingClassDetails) {
+        setIsEditingClassDetails(false);
+      }
     }
-  }, [selectedClassId, teacherClasses]);
+  }, [isEditingClassDetails, selectedClassId, teacherClasses]);
 
   useEffect(() => {
     if (!selectedStudentId && teacherStudents.length > 0) {
@@ -726,7 +736,7 @@ export default function TeacherDashboard() {
 
   async function handleCreateClass() {
     if (
-      !teacherId ||
+      !authenticatedTeacherId ||
       !newClassForm.name.trim() ||
       !newClassForm.subject.trim() ||
       !newClassForm.room.trim() ||
@@ -736,7 +746,7 @@ export default function TeacherDashboard() {
     }
     const block = newClassForm.rotationBlock.trim().toUpperCase();
     const classId = await createTeacherClass({
-      teacherId,
+      teacherId: authenticatedTeacherId,
       name: newClassForm.name.trim(),
       subject: newClassForm.subject.trim(),
       block,
@@ -762,9 +772,9 @@ export default function TeacherDashboard() {
   }
 
   async function handleDeleteClass() {
-    if (!teacherId || !selectedClassId || !classDetails?.class) return;
+    if (!authenticatedTeacherId || !selectedClassId || !classDetails?.class) return;
     if (!window.confirm(`Delete ${classDetails.class.name}?`)) return;
-    await removeTeacherClass({ teacherId, classId: selectedClassId });
+    await removeTeacherClass({ teacherId: authenticatedTeacherId, classId: selectedClassId });
     exitClassesWorkspace();
   }
 
@@ -814,9 +824,9 @@ export default function TeacherDashboard() {
   }
 
   async function handleSaveUploadedRoster() {
-    if (!teacherId || !selectedClassId || rosterMatches.length === 0) return;
+    if (!authenticatedTeacherId || !selectedClassId || rosterMatches.length === 0) return;
     await saveUploadedRoster({
-      teacherId,
+      teacherId: authenticatedTeacherId,
       classId: selectedClassId,
       entries: rosterMatches.map((match) => ({
         displayName: match.displayName,
@@ -830,9 +840,9 @@ export default function TeacherDashboard() {
   }
 
   async function handleAddManualRosterEntry() {
-    if (!teacherId || !selectedClassId || (!manualEntryName.trim() && !manualLinkedStudentId)) return;
+    if (!authenticatedTeacherId || !selectedClassId || (!manualEntryName.trim() && !manualLinkedStudentId)) return;
     await addManualRosterEntry({
-      teacherId,
+      teacherId: authenticatedTeacherId,
       classId: selectedClassId,
       displayName: manualEntryName.trim(),
       linkedStudentId: manualLinkedStudentId ? (manualLinkedStudentId as Id<"students">) : undefined,
@@ -842,11 +852,11 @@ export default function TeacherDashboard() {
   }
 
   async function handleLinkRosterEntry(rosterEntryId: Id<"classRosterEntries">) {
-    if (!teacherId) return;
+    if (!authenticatedTeacherId) return;
     const linkedStudentId = linkSelections[rosterEntryId.toString()];
     if (!linkedStudentId) return;
     await linkRosterEntry({
-      teacherId,
+      teacherId: authenticatedTeacherId,
       rosterEntryId,
       linkedStudentId: linkedStudentId as Id<"students">,
     });
@@ -909,9 +919,9 @@ export default function TeacherDashboard() {
   }
 
   async function handleBatchAbsent() {
-    if (!teacherId || !teacherRoster?.activeClass) return;
+    if (!authenticatedTeacherId || !teacherRoster?.activeClass) return;
     await batchMarkClassUnresolvedAbsent({
-      teacherId,
+      teacherId: authenticatedTeacherId,
       classId: teacherRoster.activeClass._id,
       date: todayStr(),
     });
@@ -1141,7 +1151,7 @@ export default function TeacherDashboard() {
     );
   }
 
-  if (!teacherId || teacherProfile === undefined) {
+  if (!authenticatedTeacherId || teacherProfile === undefined) {
     return (
       <AuthPanel
         mode={authMode}
@@ -1872,7 +1882,10 @@ export default function TeacherDashboard() {
                                 )}
 
                                 <button
-                                  onClick={() => teacherId && removeRosterEntry({ teacherId, rosterEntryId: entry._id })}
+                                  onClick={() =>
+                                    authenticatedTeacherId &&
+                                    removeRosterEntry({ teacherId: authenticatedTeacherId, rosterEntryId: entry._id })
+                                  }
                                   className="text-sm text-red-600 underline"
                                 >
                                   Remove

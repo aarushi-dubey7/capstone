@@ -35,6 +35,7 @@ export default function TeacherSettings() {
   const [selectedBellType, setSelectedBellType] = useState("Standard");
 
   const teacherProfile = useQuery(api.teachers.getById, teacherId ? { teacherId } : "skip");
+  const validTeacherId = teacherProfile ? teacherId : null;
   const todayRotation = useQuery(api.scheduleRotation.getByDate, { date: todayStr() });
   const recentRotation = useQuery(api.scheduleRotation.listRecent) ?? [];
   const bellSchedules = useQuery(api.bellSchedules.list) ?? [];
@@ -48,10 +49,11 @@ export default function TeacherSettings() {
   }, [todayRotation?.bellScheduleType]);
 
   useEffect(() => {
-    if (!teacherId) {
+    if (teacherId && teacherProfile === null) {
+      clearStoredTeacherId();
       navigate("/");
     }
-  }, [teacherId, navigate]);
+  }, [teacherId, teacherProfile, navigate]);
 
   async function saveRotation() {
     await setRotation({
@@ -66,6 +68,17 @@ export default function TeacherSettings() {
   function handleLogout() {
     clearStoredTeacherId();
     navigate("/");
+  }
+
+  if (!teacherId || teacherProfile === undefined || !validTeacherId) {
+    if (teacherProfile === null) {
+      return null;
+    }
+    return (
+      <div className="min-h-screen bg-slate-100 py-10 text-center text-sm text-slate-500">
+        Loading teacher settings…
+      </div>
+    );
   }
 
   return (
