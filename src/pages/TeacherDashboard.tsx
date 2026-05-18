@@ -11,10 +11,21 @@ type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
 type RosterFilter = "all" | "unresolved" | "absent" | "resolved" | "tardy";
 type ManualStatus = "present" | "absent" | "excused";
 type AuthMode = "login" | "register";
+type BeaconScanState = "idle" | "scanning" | "connected" | "error";
+type ClassesViewMode = "landing" | "creating" | "createSuccess" | "editing";
+type ClassWorkspaceSection = "details" | "rosterUpload" | "manualAdd" | "roster" | "planner";
 
 const DAY_OPTIONS = ["Day 1", "Day 2", "Day 3", "Day 4"] as const;
 type DayOption = (typeof DAY_OPTIONS)[number];
+const SCHEDULE_ACTIVITY_OPTIONS = ["Music Lesson", "NJHS Event", "Field Trip"] as const;
 const ROTATION_BLOCK_OPTIONS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const CLASS_WORKSPACE_SECTIONS: Array<{ key: ClassWorkspaceSection; label: string }> = [
+  { key: "details", label: "Class Details" },
+  { key: "rosterUpload", label: "Roster Upload" },
+  { key: "manualAdd", label: "Manual Roster Add" },
+  { key: "roster", label: "Class Roster" },
+  { key: "planner", label: "Day Block Planner" },
+];
 const ROTATION_DAY_SLOTS = {
   "Day 1": [
     { timeRange: "8:17-9:13", label: "A" },
@@ -282,6 +293,7 @@ export default function TeacherDashboard() {
   const [rosterSearch, setRosterSearch] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
   const [activityDate, setActivityDate] = useState(todayStr());
+  const [activityType, setActivityType] = useState("");
   const [activityLabel, setActivityLabel] = useState("");
   const [activityNotes, setActivityNotes] = useState("");
   const [editingScheduledActivityId, setEditingScheduledActivityId] = useState<Id<"scheduledActivities"> | null>(null);
@@ -303,7 +315,13 @@ export default function TeacherDashboard() {
   const [roomName, setRoomName] = useState("");
   const [roomUuid, setRoomUuid] = useState("");
   const [roomDeviceName, setRoomDeviceName] = useState("");
-  const [isEditingClassDetails, setIsEditingClassDetails] = useState(false);
+  const [beaconScanState, setBeaconScanState] = useState<BeaconScanState>("idle");
+  const [beaconScanMessage, setBeaconScanMessage] = useState("");
+  const [classesViewMode, setClassesViewMode] = useState<ClassesViewMode>("landing");
+  const [classWorkspaceSection, setClassWorkspaceSection] = useState<ClassWorkspaceSection>("details");
+  const [recentlyCreatedClassName, setRecentlyCreatedClassName] = useState("");
+  const [isCreatingClass, setIsCreatingClass] = useState(false);
+  const [createClassError, setCreateClassError] = useState("");
   const [classForm, setClassForm] = useState(emptyClassForm);
   const [newClassForm, setNewClassForm] = useState(emptyClassForm);
   const [manualEntryName, setManualEntryName] = useState("");
@@ -355,10 +373,6 @@ export default function TeacherDashboard() {
     api.students.getInsights,
     selectedStudentId ? { studentId: selectedStudentId } : "skip",
   );
-  const studentSchedule = useQuery(
-    api.schedules.getForStudent,
-    selectedStudentId ? { studentId: selectedStudentId } : "skip",
-  ) ?? [];
   const liveLocations = useQuery(api.attendance.getLiveLocations) ?? [];
   const allLocations = useQuery(api.locations.list) ?? [];
   const bellSchedules = useQuery(api.bellSchedules.list) ?? [];
@@ -419,11 +433,11 @@ export default function TeacherDashboard() {
   useEffect(() => {
     if (selectedClassId && !teacherClasses.some((classDoc) => classDoc._id.toString() === selectedClassId.toString())) {
       setSelectedClassId(null);
-      if (isEditingClassDetails) {
-        setIsEditingClassDetails(false);
+      if (classesViewMode === "editing") {
+        setClassesViewMode("landing");
       }
     }
-  }, [isEditingClassDetails, selectedClassId, teacherClasses]);
+  }, [classesViewMode, selectedClassId, teacherClasses]);
 
   useEffect(() => {
     if (!selectedStudentId && teacherStudents.length > 0) {
@@ -548,6 +562,10 @@ export default function TeacherDashboard() {
     () => teacherStudents.find((student) => student._id.toString() === selectedStudentId?.toString()) ?? null,
     [selectedStudentId, teacherStudents],
   );
+  const selectedTeacherClass = useMemo(
+    () => teacherClasses.find((classDoc) => classDoc._id.toString() === selectedClassId?.toString()) ?? null,
+    [selectedClassId, teacherClasses],
+  );
 
   const rotationBlockByDay = useMemo(
     () =>
@@ -562,11 +580,6 @@ export default function TeacherDashboard() {
         {} as Record<DayOption, Array<{ timeRange: string; blockLabel: string }>>,
       ),
     [],
-  );
-
-  const schedDays = useMemo(
-    () => [...new Set(studentSchedule.map((entry) => entry.dayOfWeek))].sort(),
-    [studentSchedule],
   );
 
   const roomEntries = useMemo(
@@ -663,25 +676,65 @@ export default function TeacherDashboard() {
   }
 
   async function scanForBeacon() {
+    if (!editingRoom) return;
+    if (!("bluetooth" in navigator)) {
+      setBeaconScanState("error");
+      setBeaconScanMessage("Web Bluetooth is not available in this browser.");
+      return;
+    }
+
     try {
+      setBeaconScanState("scanning");
+      setBeaconScanMessage(`Searching for a beacon for Room ${editingRoom}...`);
+
+      const filters: BluetoothLEScanFilter[] = [];
+      const trimmedRoomName = roomName.trim();
+      const existingDeviceName = roomDeviceName.trim();
+
+      if (existingDeviceName) {
+        filters.push({ name: existingDeviceName });
+      }
+      if (trimmedRoomName) {
+        filters.push({ name: trimmedRoomName });
+      }
+      filters.push({ namePrefix: `Room-${editingRoom}` });
+      filters.push({ namePrefix: `Room ${editingRoom}` });
+      filters.push({ namePrefix: "Room-" });
+
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: "Room-" }],
+        filters,
         optionalServices: [
           "000000c2-0000-1000-8000-00805f9b34fb",
           "00000b12-0000-1000-8000-00805f9b34fb",
         ].map((service) => service.toLowerCase()),
       });
 
-      setRoomDeviceName(device.name ?? "Room-Beacon");
       const server = await device.gatt?.connect();
       const services = await server?.getPrimaryServices();
-      if (services && services.length > 0) {
-        const customService = services.find((service) => !service.uuid.startsWith("000018")) || services[0];
-        setRoomUuid(customService.uuid);
+      const beaconService = services?.find((service) => !service.uuid.startsWith("000018")) ?? services?.[0];
+
+      if (!beaconService) {
+        throw new Error("Connected device did not expose a beacon service UUID.");
+      }
+
+      setRoomDeviceName(device.name ?? `Room-${editingRoom}`);
+      setRoomUuid(beaconService.uuid.toLowerCase());
+      setBeaconScanState("connected");
+      setBeaconScanMessage(`Connected to ${device.name ?? "selected beacon"}. Save to link it to Room ${editingRoom}.`);
+
+      if (device.gatt?.connected) {
+        device.gatt.disconnect();
       }
     } catch (error) {
       console.error("BLE scan failed:", error);
-      alert("Bluetooth scan failed or was cancelled.");
+      const message = error instanceof Error ? error.message : "Bluetooth scan failed or was cancelled.";
+      if (message.toLowerCase().includes("cancelled") || message.toLowerCase().includes("user")) {
+        setBeaconScanState("idle");
+        setBeaconScanMessage("");
+        return;
+      }
+      setBeaconScanState("error");
+      setBeaconScanMessage(message);
     }
   }
 
@@ -691,6 +744,12 @@ export default function TeacherDashboard() {
     setRoomName(location?.name ?? `Room ${room}`);
     setRoomUuid(location?.uuid ?? "");
     setRoomDeviceName(location?.deviceName ?? "");
+    setBeaconScanState(location ? "connected" : "idle");
+    setBeaconScanMessage(
+      location?.deviceName
+        ? `Saved beacon: ${location.deviceName}${location.uuid ? ` (${location.uuid.toLowerCase()})` : ""}`
+        : "",
+    );
   }
 
   async function saveRoomBeacon() {
@@ -705,6 +764,8 @@ export default function TeacherDashboard() {
     setRoomName("");
     setRoomUuid("");
     setRoomDeviceName("");
+    setBeaconScanState("idle");
+    setBeaconScanMessage("");
   }
 
   function clearRosterBuilderState() {
@@ -730,32 +791,62 @@ export default function TeacherDashboard() {
 
   function exitClassesWorkspace() {
     clearClassWorkspaceDrafts();
+    setClassesViewMode("landing");
+    setClassWorkspaceSection("details");
     setSelectedClassId(null);
     setNewClassForm(emptyClassForm());
+    setRecentlyCreatedClassName("");
+  }
+
+  function startCreateClassFlow() {
+    exitClassesWorkspace();
+    setCreateClassError("");
+    setClassesViewMode("creating");
+  }
+
+  function openClassWorkspace(classId: Id<"teacherClasses">) {
+    clearClassWorkspaceDrafts();
+    setSelectedClassId(classId);
+    setClassesViewMode("editing");
+    setClassWorkspaceSection("details");
   }
 
   async function handleCreateClass() {
+    if (!authenticatedTeacherId) {
+      setCreateClassError("Please log in again before creating a class.");
+      return;
+    }
     if (
-      !authenticatedTeacherId ||
       !newClassForm.name.trim() ||
       !newClassForm.subject.trim() ||
       !newClassForm.room.trim() ||
       !newClassForm.rotationBlock.trim()
     ) {
+      setCreateClassError("Please fill in class name, subject, room, and block.");
       return;
     }
-    const block = newClassForm.rotationBlock.trim().toUpperCase();
-    const classId = await createTeacherClass({
-      teacherId: authenticatedTeacherId,
-      name: newClassForm.name.trim(),
-      subject: newClassForm.subject.trim(),
-      block,
-      room: newClassForm.room.trim(),
-      grade: newClassForm.grade.trim() || undefined,
-      rotationBlock: newClassForm.rotationBlock.trim() || undefined,
-    });
-    setSelectedClassId(classId);
-    clearClassWorkspaceDrafts();
+
+    setCreateClassError("");
+    setIsCreatingClass(true);
+    try {
+      const block = newClassForm.rotationBlock.trim().toUpperCase();
+      const classId = await createTeacherClass({
+        teacherId: authenticatedTeacherId,
+        name: newClassForm.name.trim(),
+        subject: newClassForm.subject.trim(),
+        block,
+        room: newClassForm.room.trim(),
+        grade: newClassForm.grade.trim() || undefined,
+        rotationBlock: newClassForm.rotationBlock.trim() || undefined,
+      });
+      setSelectedClassId(classId);
+      clearClassWorkspaceDrafts();
+      setClassesViewMode("creating");
+    } catch (error) {
+      setCreateClassError(error instanceof Error ? error.message : "Could not create the class.");
+    } finally {
+      setIsCreatingClass(false);
+    }
   }
 
   async function handleUpdateClass() {
@@ -776,6 +867,11 @@ export default function TeacherDashboard() {
     if (!window.confirm(`Delete ${classDetails.class.name}?`)) return;
     await removeTeacherClass({ teacherId: authenticatedTeacherId, classId: selectedClassId });
     exitClassesWorkspace();
+  }
+
+  function finishCreateClassSetup() {
+    setRecentlyCreatedClassName(classDetails?.class.name ?? (newClassForm.name.trim() || "Class"));
+    setClassesViewMode("createSuccess");
   }
 
   function applyRosterFile(file: File) {
@@ -882,6 +978,7 @@ export default function TeacherDashboard() {
   function clearActivityForm() {
     setEditingScheduledActivityId(null);
     setActivityDate(todayStr());
+    setActivityType("");
     setActivityLabel("");
     setActivityNotes("");
   }
@@ -894,7 +991,13 @@ export default function TeacherDashboard() {
   }) {
     setEditingScheduledActivityId(activity._id);
     setActivityDate(activity.date);
-    setActivityLabel(activity.activityLabel);
+    if (SCHEDULE_ACTIVITY_OPTIONS.includes(activity.activityLabel as (typeof SCHEDULE_ACTIVITY_OPTIONS)[number])) {
+      setActivityType(activity.activityLabel);
+      setActivityLabel(activity.activityLabel);
+    } else {
+      setActivityType("Other");
+      setActivityLabel(activity.activityLabel);
+    }
     setActivityNotes(activity.notes ?? "");
   }
 
@@ -944,6 +1047,531 @@ export default function TeacherDashboard() {
       tardyThreshold: Number(settingsForm.tardyThreshold) || 3,
       reminderMinutesAfterStart: Number(settingsForm.reminderMinutesAfterStart) || 15,
     });
+  }
+
+  function renderBackButton() {
+    return (
+      <button
+        type="button"
+        onClick={exitClassesWorkspace}
+        className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+      >
+        <span aria-hidden="true">&lt;</span>
+        <span>Back</span>
+      </button>
+    );
+  }
+
+  function renderCreateClassFormCard() {
+    const createdClassSummary = classDetails?.class ?? selectedTeacherClass;
+
+    if (createdClassSummary && selectedClassId) {
+      return (
+        <div className="card space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Create Class</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Class details are saved. Keep going below to upload the roster or add students manually.
+              </p>
+            </div>
+            <div className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Step 1 complete
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="text-lg font-semibold text-slate-900">{createdClassSummary.name}</div>
+            <div className="mt-1 text-sm text-slate-500">
+              {createdClassSummary.subject} · Room {createdClassSummary.room}
+              {createdClassSummary.grade ? ` · Grade ${createdClassSummary.grade}` : ""}
+              {createdClassSummary.rotationBlock ? ` · Block ${createdClassSummary.rotationBlock}` : ""}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="card space-y-4">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Create Class</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Start with the class details, then build the roster in the next steps.
+          </p>
+        </div>
+        <input
+          type="text"
+          value={newClassForm.name}
+          onChange={(event) => {
+            setCreateClassError("");
+            setNewClassForm((current) => ({ ...current, name: event.target.value }));
+          }}
+          placeholder="Class name"
+          className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+        <input
+          type="text"
+          value={newClassForm.subject}
+          onChange={(event) => {
+            setCreateClassError("");
+            setNewClassForm((current) => ({ ...current, subject: event.target.value }));
+          }}
+          placeholder="Subject"
+          className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            type="text"
+            value={newClassForm.room}
+            onChange={(event) => {
+              setCreateClassError("");
+              setNewClassForm((current) => ({ ...current, room: event.target.value }));
+            }}
+            placeholder="Room"
+            className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <input
+            type="text"
+            value={newClassForm.grade}
+            onChange={(event) => {
+              setCreateClassError("");
+              setNewClassForm((current) => ({ ...current, grade: event.target.value }));
+            }}
+            placeholder="Grade"
+            className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <select
+            value={newClassForm.rotationBlock}
+            onChange={(event) => {
+              setCreateClassError("");
+              setNewClassForm((current) => ({ ...current, rotationBlock: event.target.value }));
+            }}
+            className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 md:col-span-2"
+          >
+            <option value="">Choose rotation block</option>
+            {ROTATION_BLOCK_OPTIONS.map((block) => (
+              <option key={block} value={block}>
+                Block {block}
+              </option>
+            ))}
+          </select>
+        </div>
+        {createClassError && (
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{createClassError}</div>
+        )}
+        <button onClick={handleCreateClass} disabled={isCreatingClass} className="btn-primary w-full disabled:opacity-60">
+          {isCreatingClass ? "Creating Class..." : "Create Class"}
+        </button>
+      </div>
+    );
+  }
+
+  function renderClassSummaryCard() {
+    if (!classDetails?.class) return null;
+
+    return (
+      <div className="card space-y-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">{classDetails.class.name}</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {classDetails.class.subject} · Room {classDetails.class.room}
+              {classDetails.class.grade ? ` · Grade ${classDetails.class.grade}` : ""}
+              {classDetails.class.rotationBlock ? ` · Block ${classDetails.class.rotationBlock}` : ""}
+            </p>
+          </div>
+          <button
+            onClick={handleDeleteClass}
+            className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+          >
+            Delete Class
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {CLASS_WORKSPACE_SECTIONS.map((section) => (
+            <button
+              key={section.key}
+              type="button"
+              onClick={() => setClassWorkspaceSection(section.key)}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                classWorkspaceSection === section.key
+                  ? "bg-brand-700 text-white"
+                  : "border border-slate-300 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700"
+              }`}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderClassDetailsSection() {
+    if (!classDetails?.class) return null;
+
+    return (
+      <div className="card space-y-4">
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-slate-900">Class Details</h3>
+          <InfoTooltip label="Update the class name, subject, room, grade, or rotation block for this class." />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            type="text"
+            value={classForm.name}
+            onChange={(event) => setClassForm((current) => ({ ...current, name: event.target.value }))}
+            placeholder="Class name"
+            className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <input
+            type="text"
+            value={classForm.subject}
+            onChange={(event) => setClassForm((current) => ({ ...current, subject: event.target.value }))}
+            placeholder="Subject"
+            className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <input
+            type="text"
+            value={classForm.room}
+            onChange={(event) => setClassForm((current) => ({ ...current, room: event.target.value }))}
+            placeholder="Room"
+            className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <input
+            type="text"
+            value={classForm.grade}
+            onChange={(event) => setClassForm((current) => ({ ...current, grade: event.target.value }))}
+            placeholder="Grade"
+            className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <select
+            value={classForm.rotationBlock}
+            onChange={(event) => setClassForm((current) => ({ ...current, rotationBlock: event.target.value }))}
+            className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 md:col-span-2"
+          >
+            <option value="">Choose rotation block</option>
+            {ROTATION_BLOCK_OPTIONS.map((block) => (
+              <option key={block} value={block}>
+                Block {block}
+              </option>
+            ))}
+          </select>
+          <button onClick={handleUpdateClass} className="btn-primary md:col-span-2">
+            Save Class Details
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderRosterUploadSection() {
+    return (
+      <div className="card space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Roster Upload</h3>
+            <p className="text-sm text-slate-500">
+              Upload a roster image, drop one here, or paste from your clipboard, then confirm the matches.
+            </p>
+          </div>
+          <button
+            onClick={() => rosterFileRef.current?.click()}
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700"
+          >
+            Choose Image
+          </button>
+          <input
+            ref={rosterFileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) applyRosterFile(file);
+            }}
+          />
+        </div>
+
+        <div
+          tabIndex={0}
+          onPaste={handleRosterPaste}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setIsRosterDragActive(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            if (!isRosterDragActive) setIsRosterDragActive(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+            setIsRosterDragActive(false);
+          }}
+          onDrop={handleRosterDrop}
+          onClick={() => rosterFileRef.current?.click()}
+          className={`rounded-2xl border-2 border-dashed px-5 py-6 text-sm outline-none transition-colors ${
+            isRosterDragActive
+              ? "border-brand-500 bg-brand-50 text-brand-800"
+              : "border-slate-300 bg-slate-50 text-slate-500 hover:border-brand-300 hover:bg-brand-50/50"
+          }`}
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="font-semibold text-slate-800">Drop roster image here or click to choose a file</div>
+              <div className="mt-1 text-xs text-slate-500">You can also click this box and press paste with an image from your clipboard.</div>
+            </div>
+            <div className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
+              {rosterFile ? rosterFile.name : "PNG, JPG, or screenshot"}
+            </div>
+          </div>
+        </div>
+
+        {rosterPreviewImage && (
+          <img src={rosterPreviewImage} alt="Roster preview" className="max-h-72 rounded-2xl border border-slate-200 object-contain" />
+        )}
+
+        {rosterFile && parsedRosterNames.length === 0 && (
+          <button onClick={handleParseRoster} disabled={isParsingRoster} className="btn-primary w-full disabled:opacity-50">
+            {isParsingRoster ? "Reading roster..." : "Parse Roster with Groq"}
+          </button>
+        )}
+
+        {rosterParseError && (
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{rosterParseError}</div>
+        )}
+
+        {rosterMatches.length > 0 && (
+          <div className="space-y-3">
+            {rosterMatches.map((match) => (
+              <div key={match.displayName} className="rounded-2xl border border-slate-200 px-4 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-900">{match.displayName}</div>
+                    <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                      {match.matchType === "exact"
+                        ? "Exact match"
+                        : match.matchType === "likely"
+                          ? "Likely match"
+                          : match.matchType === "ambiguous"
+                            ? "Ambiguous match"
+                            : "Unmatched"}
+                    </div>
+                  </div>
+                  <select
+                    value={rosterSelections[match.displayName] ?? ""}
+                    onChange={(event) =>
+                      setRosterSelections((current) => ({
+                        ...current,
+                        [match.displayName]: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 lg:w-80"
+                  >
+                    <option value="">Save as placeholder</option>
+                    {match.candidates.map((candidate) => (
+                      <option key={candidate.studentId.toString()} value={candidate.studentId.toString()}>
+                        {candidate.name} · {candidate.studentNumber}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ))}
+
+            <button onClick={handleSaveUploadedRoster} className="btn-primary w-full">
+              Save Parsed Roster
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderManualRosterSection() {
+    return (
+      <div className="card space-y-4">
+        <h3 className="text-lg font-semibold text-slate-900">Manual Roster Add</h3>
+        <div className="grid gap-3 lg:grid-cols-[1fr,280px,auto]">
+          <input
+            type="text"
+            value={manualEntryName}
+            onChange={(event) => setManualEntryName(event.target.value)}
+            placeholder="Student display name"
+            className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+          <select
+            value={manualLinkedStudentId}
+            onChange={(event) => setManualLinkedStudentId(event.target.value)}
+            className="rounded-xl border border-slate-300 px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="">No linked account yet</option>
+            {allStudentOptions.map((student) => (
+              <option key={student._id.toString()} value={student._id.toString()}>
+                {student.name} · {student.studentId}
+              </option>
+            ))}
+          </select>
+          <button onClick={handleAddManualRosterEntry} className="btn-primary px-4">
+            Add
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderClassRosterSection() {
+    return (
+      <div className="card space-y-4">
+        <h3 className="text-lg font-semibold text-slate-900">Class Roster</h3>
+        {classDetails === undefined ? (
+          <p className="text-sm text-slate-400">Loading roster details...</p>
+        ) : classDetails?.roster.length ? (
+          <div className="space-y-3">
+            {classDetails.roster.map((entry) => (
+              <div key={entry._id.toString()} className="rounded-2xl border border-slate-200 px-4 py-4">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-900">{entry.displayName}</div>
+                    <div className="mt-1 text-sm text-slate-500">
+                      {entry.linkedStudent
+                        ? `${entry.linkedStudent.name} · ${entry.linkedStudent.studentId}`
+                        : "Placeholder entry"}
+                      {entry.source ? ` · ${entry.source}` : ""}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 xl:items-end">
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                        entry.status === "linked"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {entry.status === "linked" ? "Linked" : "Placeholder"}
+                    </span>
+
+                    {entry.status === "placeholder" && (
+                      <div className="flex flex-wrap gap-2">
+                        <select
+                          value={linkSelections[entry._id.toString()] ?? ""}
+                          onChange={(event) =>
+                            setLinkSelections((current) => ({
+                              ...current,
+                              [entry._id.toString()]: event.target.value,
+                            }))
+                          }
+                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        >
+                          <option value="">Link to student...</option>
+                          {allStudentOptions.map((student) => (
+                            <option key={student._id.toString()} value={student._id.toString()}>
+                              {student.name} · {student.studentId}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleLinkRosterEntry(entry._id)}
+                          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700"
+                        >
+                          Link
+                        </button>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() =>
+                        authenticatedTeacherId &&
+                        removeRosterEntry({ teacherId: authenticatedTeacherId, rosterEntryId: entry._id })
+                      }
+                      className="text-sm text-red-600 underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">This class does not have a roster yet.</p>
+        )}
+      </div>
+    );
+  }
+
+  function renderDayBlockPlannerSection() {
+    return (
+      <div className="card space-y-5">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">Day Block Planner</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Each day follows the fixed rotation pattern. Once each class has a home block, the planner fills in automatically.
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          {DAY_OPTIONS.map((dayLabel) => (
+            <div key={dayLabel} className="rounded-2xl border border-slate-200 px-4 py-4">
+              <div className="mb-4 flex items-center justify-between">
+                <h4 className="font-semibold text-slate-900">{dayLabel}</h4>
+                <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                  Auto-filled from class blocks
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {(dayAssignments[dayLabel] ?? rotationBlockByDay[dayLabel] ?? []).map((slot) => (
+                  <div
+                    key={`${dayLabel}-${slot.timeRange}-${slot.blockLabel}`}
+                    className="grid gap-3 rounded-2xl bg-slate-50 px-4 py-4 md:grid-cols-[120px,120px,1fr] md:items-center"
+                  >
+                    <div className="text-sm font-medium text-slate-500">{slot.timeRange}</div>
+                    <div className="text-sm font-semibold text-slate-700">{slot.blockLabel}</div>
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                      {"className" in slot && slot.className ? (
+                        <div>
+                          <div className="font-semibold text-slate-900">{slot.className}</div>
+                          <div className="mt-1 text-slate-500">
+                            {slot.subject ? `${slot.subject} · ` : ""}Room {slot.room}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-slate-400">
+                          {slot.blockLabel.includes("Lunch")
+                            ? "Fixed lunch / EP block"
+                            : "No class assigned to this block yet"}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderEditWorkspaceSection() {
+    if (!selectedClassId || !classDetails?.class) {
+      return (
+        <div className="card rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-400">
+          Choose a class from the Classes landing page to open its workspace.
+        </div>
+      );
+    }
+
+    if (classWorkspaceSection === "details") return renderClassDetailsSection();
+    if (classWorkspaceSection === "rosterUpload") return renderRosterUploadSection();
+    if (classWorkspaceSection === "manualAdd") return renderManualRosterSection();
+    if (classWorkspaceSection === "roster") return renderClassRosterSection();
+    return renderDayBlockPlannerSection();
   }
 
   function renderSettingsPanel() {
@@ -1198,7 +1826,7 @@ export default function TeacherDashboard() {
               onClick={() => navigate("/teacher/settings")}
               className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-brand-50 transition-colors hover:bg-white/20"
             >
-              {headerDayLabel ? `Rotation Day · ${headerDayLabel}` : "Rotation Day"}
+              {headerDayLabel ?? "Set Day"}
             </button>
             <div className="flex gap-2">
               <button
@@ -1245,7 +1873,7 @@ export default function TeacherDashboard() {
               {([
                 ["attendance", "Attendance"],
                 ["classes", "Classes"],
-                ["schedules", "Schedules"],
+                ["schedules", "Students"],
                 ["rooms", "Rooms"],
                 ["movement", "Movement"],
               ] as Array<[Tab, string]>).map(([value, label]) => (
@@ -1465,23 +2093,7 @@ export default function TeacherDashboard() {
                 )}
               </div>
 
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="card">
-                  <h3 className="text-lg font-semibold text-slate-900">Live Rooms</h3>
-                  {teacherRoster?.liveRooms.length ? (
-                    <div className="mt-4 space-y-3">
-                      {teacherRoster.liveRooms.map((entry) => (
-                        <div key={entry.locationName} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                          <span className="font-medium text-slate-700">{entry.locationName}</span>
-                          <span className="text-sm text-slate-500">{entry.count} students</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-4 text-sm text-slate-400">No check-ins yet today.</p>
-                  )}
-                </div>
-
+              <div className="grid gap-6">
                 <div className="card">
                   <h3 className="text-lg font-semibold text-slate-900">Recent Check-ins</h3>
                   {teacherRoster?.recentCheckIns.length ? (
@@ -1517,19 +2129,19 @@ export default function TeacherDashboard() {
                   {teacherClasses.map((classDoc) => (
                     <button
                       key={classDoc._id.toString()}
-                      onClick={() => setSelectedClassId(classDoc._id)}
+                      onClick={() => openClassWorkspace(classDoc._id)}
                       className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
-                        selectedClassId?.toString() === classDoc._id.toString()
+                        selectedClassId?.toString() === classDoc._id.toString() && classesViewMode === "editing"
                           ? "border-brand-300 bg-brand-50"
                           : "border-slate-200 bg-white hover:border-brand-200"
                       }`}
                     >
                       <div className="font-semibold text-slate-900">{classDoc.name}</div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {classDoc.subject} · Room {classDoc.room}
-                      {classDoc.rotationBlock ? ` · Block ${classDoc.rotationBlock}` : ""}
-                    </div>
-                  </button>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {classDoc.subject} · Room {classDoc.room}
+                        {classDoc.rotationBlock ? ` · Block ${classDoc.rotationBlock}` : ""}
+                      </div>
+                    </button>
                   ))}
                   {teacherClasses.length === 0 && (
                     <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-400">
@@ -1538,417 +2150,81 @@ export default function TeacherDashboard() {
                   )}
                 </div>
               </div>
-
-              <div className="card space-y-3">
-                <h3 className="text-lg font-semibold text-slate-900">Create Class</h3>
-                <input
-                  type="text"
-                  value={newClassForm.name}
-                  onChange={(event) => setNewClassForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Class name"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-                <input
-                  type="text"
-                  value={newClassForm.subject}
-                  onChange={(event) => setNewClassForm((current) => ({ ...current, subject: event.target.value }))}
-                  placeholder="Subject"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <input
-                    type="text"
-                    value={newClassForm.room}
-                    onChange={(event) => setNewClassForm((current) => ({ ...current, room: event.target.value }))}
-                    placeholder="Room"
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                  <input
-                    type="text"
-                    value={newClassForm.grade}
-                    onChange={(event) => setNewClassForm((current) => ({ ...current, grade: event.target.value }))}
-                    placeholder="Grade"
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                  <select
-                    value={newClassForm.rotationBlock}
-                    onChange={(event) => setNewClassForm((current) => ({ ...current, rotationBlock: event.target.value }))}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 md:col-span-2"
-                  >
-                    <option value="">Choose rotation block</option>
-                    {ROTATION_BLOCK_OPTIONS.map((block) => (
-                      <option key={block} value={block}>
-                        Block {block}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button onClick={handleCreateClass} className="btn-primary w-full">
-                  Add Class
-                </button>
-              </div>
             </div>
 
             <div className="space-y-6">
-              <div className="card space-y-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900">
-                      {classDetails?.class.name ?? "Select a class"}
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {classDetails?.class.subject ?? "Class setup"}
-                      {classDetails?.class ? ` · Room ${classDetails.class.room}` : ""}
-                      {classDetails?.class?.rotationBlock ? ` · Block ${classDetails.class.rotationBlock}` : ""}
-                    </p>
-                  </div>
-                  {classDetails?.class && (
-                    <div className="flex gap-2">
-                      {!isEditingClassDetails && (
-                        <InfoTooltip label="Open Edit Details to update the class name, subject, room, grade, or rotation block." />
-                      )}
-                      <button
-                        onClick={() => setIsEditingClassDetails((current) => !current)}
-                        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
-                      >
-                        {isEditingClassDetails ? "Close Editor" : "Edit Details"}
-                      </button>
-                      {isEditingClassDetails && (
-                        <button
-                          onClick={handleDeleteClass}
-                          className="rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
-                        >
-                          Delete Class
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {classDetails?.class ? (
-                  isEditingClassDetails ? (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <input
-                      type="text"
-                      value={classForm.name}
-                      onChange={(event) => setClassForm((current) => ({ ...current, name: event.target.value }))}
-                      placeholder="Class name"
-                      className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                    <input
-                      type="text"
-                      value={classForm.subject}
-                      onChange={(event) => setClassForm((current) => ({ ...current, subject: event.target.value }))}
-                      placeholder="Subject"
-                      className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                    <input
-                      type="text"
-                      value={classForm.room}
-                      onChange={(event) => setClassForm((current) => ({ ...current, room: event.target.value }))}
-                      placeholder="Room"
-                      className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                    <input
-                      type="text"
-                      value={classForm.grade}
-                      onChange={(event) => setClassForm((current) => ({ ...current, grade: event.target.value }))}
-                      placeholder="Grade"
-                      className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                    <select
-                      value={classForm.rotationBlock}
-                      onChange={(event) => setClassForm((current) => ({ ...current, rotationBlock: event.target.value }))}
-                      className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    >
-                      <option value="">Choose rotation block</option>
-                      {ROTATION_BLOCK_OPTIONS.map((block) => (
-                        <option key={block} value={block}>
-                          Block {block}
-                        </option>
-                      ))}
-                    </select>
-                    <button onClick={handleUpdateClass} className="btn-primary md:col-span-2">
-                      Save Class Details
+              {classesViewMode === "landing" && (
+                <>
+                  <div className="flex justify-end">
+                    <button onClick={startCreateClassFlow} className="btn-primary px-6">
+                      Create Class
                     </button>
                   </div>
-                  ) : null
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-400">
-                    Choose a class from the left to manage its roster and teaching blocks.
-                  </div>
-                )}
-              </div>
-
-              {selectedClassId && (
-                <>
                   <div className="card space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-lg font-semibold text-slate-900">Roster Upload</h3>
-                        <p className="text-sm text-slate-500">Upload a roster image, drop one here, or paste from your clipboard, then confirm the matches.</p>
-                      </div>
-                      <button onClick={() => rosterFileRef.current?.click()} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700">
-                        Choose Image
-                      </button>
-                      <input
-                        ref={rosterFileRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file) applyRosterFile(file);
-                        }}
-                      />
-                    </div>
-
-                    <div
-                      tabIndex={0}
-                      onPaste={handleRosterPaste}
-                      onDragEnter={(event) => {
-                        event.preventDefault();
-                        setIsRosterDragActive(true);
-                      }}
-                      onDragOver={(event) => {
-                        event.preventDefault();
-                        if (!isRosterDragActive) setIsRosterDragActive(true);
-                      }}
-                      onDragLeave={(event) => {
-                        event.preventDefault();
-                        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-                        setIsRosterDragActive(false);
-                      }}
-                      onDrop={handleRosterDrop}
-                      onClick={() => rosterFileRef.current?.click()}
-                      className={`rounded-2xl border-2 border-dashed px-5 py-6 text-sm outline-none transition-colors ${
-                        isRosterDragActive
-                          ? "border-brand-500 bg-brand-50 text-brand-800"
-                          : "border-slate-300 bg-slate-50 text-slate-500 hover:border-brand-300 hover:bg-brand-50/50"
-                      }`}
-                    >
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <div className="font-semibold text-slate-800">Drop roster image here or click to choose a file</div>
-                          <div className="mt-1 text-xs text-slate-500">You can also click this box and press paste with an image from your clipboard.</div>
-                        </div>
-                        <div className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
-                          {rosterFile ? rosterFile.name : "PNG, JPG, or screenshot"}
-                        </div>
-                      </div>
-                    </div>
-
-                    {rosterPreviewImage && (
-                      <img src={rosterPreviewImage} alt="Roster preview" className="max-h-72 rounded-2xl border border-slate-200 object-contain" />
-                    )}
-
-                    {rosterFile && parsedRosterNames.length === 0 && (
-                      <button onClick={handleParseRoster} disabled={isParsingRoster} className="btn-primary w-full disabled:opacity-50">
-                        {isParsingRoster ? "Reading roster..." : "Parse Roster with Groq"}
-                      </button>
-                    )}
-
-                    {rosterParseError && (
-                      <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{rosterParseError}</div>
-                    )}
-
-                    {rosterMatches.length > 0 && (
-                      <div className="space-y-3">
-                        {rosterMatches.map((match) => (
-                          <div key={match.displayName} className="rounded-2xl border border-slate-200 px-4 py-4">
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                              <div>
-                                <div className="font-semibold text-slate-900">{match.displayName}</div>
-                                <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
-                                  {match.matchType === "exact"
-                                    ? "Exact match"
-                                    : match.matchType === "likely"
-                                      ? "Likely match"
-                                      : match.matchType === "ambiguous"
-                                        ? "Ambiguous match"
-                                        : "Unmatched"}
-                                </div>
-                              </div>
-                              <select
-                                value={rosterSelections[match.displayName] ?? ""}
-                                onChange={(event) =>
-                                  setRosterSelections((current) => ({
-                                    ...current,
-                                    [match.displayName]: event.target.value,
-                                  }))
-                                }
-                                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 lg:w-80"
-                              >
-                                <option value="">Save as placeholder</option>
-                                {match.candidates.map((candidate) => (
-                                  <option key={candidate.studentId.toString()} value={candidate.studentId.toString()}>
-                                    {candidate.name} · {candidate.studentNumber}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        ))}
-
-                        <button onClick={handleSaveUploadedRoster} className="btn-primary w-full">
-                          Save Parsed Roster
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="card space-y-4">
-                    <h3 className="text-lg font-semibold text-slate-900">Manual Roster Add</h3>
-                    <div className="grid gap-3 lg:grid-cols-[1fr,280px,auto]">
-                      <input
-                        type="text"
-                        value={manualEntryName}
-                        onChange={(event) => setManualEntryName(event.target.value)}
-                        placeholder="Student display name"
-                        className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                      />
-                      <select
-                        value={manualLinkedStudentId}
-                        onChange={(event) => setManualLinkedStudentId(event.target.value)}
-                        className="rounded-xl border border-slate-300 px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                      >
-                        <option value="">No linked account yet</option>
-                        {allStudentOptions.map((student) => (
-                          <option key={student._id.toString()} value={student._id.toString()}>
-                            {student.name} · {student.studentId}
-                          </option>
-                        ))}
-                      </select>
-                      <button onClick={handleAddManualRosterEntry} className="btn-primary px-4">
-                        Add
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="card space-y-4">
-                    <h3 className="text-lg font-semibold text-slate-900">Class Roster</h3>
-                    {classDetails?.roster.length ? (
-                      <div className="space-y-3">
-                        {classDetails.roster.map((entry) => (
-                          <div key={entry._id.toString()} className="rounded-2xl border border-slate-200 px-4 py-4">
-                            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                              <div>
-                                <div className="font-semibold text-slate-900">{entry.displayName}</div>
-                                <div className="mt-1 text-sm text-slate-500">
-                                  {entry.linkedStudent
-                                    ? `${entry.linkedStudent.name} · ${entry.linkedStudent.studentId}`
-                                    : "Placeholder entry"}
-                                  {entry.source ? ` · ${entry.source}` : ""}
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col gap-2 xl:items-end">
-                                <span
-                                  className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                                    entry.status === "linked"
-                                      ? "bg-emerald-100 text-emerald-700"
-                                      : "bg-slate-100 text-slate-600"
-                                  }`}
-                                >
-                                  {entry.status === "linked" ? "Linked" : "Placeholder"}
-                                </span>
-
-                                {entry.status === "placeholder" && (
-                                  <div className="flex flex-wrap gap-2">
-                                    <select
-                                      value={linkSelections[entry._id.toString()] ?? ""}
-                                      onChange={(event) =>
-                                        setLinkSelections((current) => ({
-                                          ...current,
-                                          [entry._id.toString()]: event.target.value,
-                                        }))
-                                      }
-                                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                                    >
-                                      <option value="">Link to student...</option>
-                                      {allStudentOptions.map((student) => (
-                                        <option key={student._id.toString()} value={student._id.toString()}>
-                                          {student.name} · {student.studentId}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <button
-                                      onClick={() => handleLinkRosterEntry(entry._id)}
-                                      className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700"
-                                    >
-                                      Link
-                                    </button>
-                                  </div>
-                                )}
-
-                                <button
-                                  onClick={() =>
-                                    authenticatedTeacherId &&
-                                    removeRosterEntry({ teacherId: authenticatedTeacherId, rosterEntryId: entry._id })
-                                  }
-                                  className="text-sm text-red-600 underline"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-slate-400">This class does not have a roster yet.</p>
-                    )}
-                  </div>
-
-                  <div className="card space-y-5">
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">Day Block Planner</h3>
+                      <h2 className="text-xl font-bold text-slate-900">Classes</h2>
                       <p className="mt-1 text-sm text-slate-500">
-                        Each day follows the fixed rotation pattern. Once each class has a home block, the planner fills in automatically.
+                        Pick a class from the left to open its workspace, or start a guided setup for a new one.
                       </p>
                     </div>
-
-                    <div className="space-y-6">
-                      {DAY_OPTIONS.map((dayLabel) => (
-                        <div key={dayLabel} className="rounded-2xl border border-slate-200 px-4 py-4">
-                          <div className="mb-4 flex items-center justify-between">
-                            <h4 className="font-semibold text-slate-900">{dayLabel}</h4>
-                            <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                              Auto-filled from class blocks
-                            </span>
-                          </div>
-
-                          <div className="space-y-3">
-                            {(dayAssignments[dayLabel] ?? rotationBlockByDay[dayLabel] ?? []).map((slot) => (
-                              <div
-                                key={`${dayLabel}-${slot.timeRange}-${slot.blockLabel}`}
-                                className="grid gap-3 rounded-2xl bg-slate-50 px-4 py-4 md:grid-cols-[120px,120px,1fr] md:items-center"
-                              >
-                                <div className="text-sm font-medium text-slate-500">{slot.timeRange}</div>
-                                <div className="text-sm font-semibold text-slate-700">{slot.blockLabel}</div>
-                                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-                                  {"className" in slot && slot.className ? (
-                                    <div>
-                                      <div className="font-semibold text-slate-900">{slot.className}</div>
-                                      <div className="mt-1 text-slate-500">
-                                        {slot.subject ? `${slot.subject} · ` : ""}Room {slot.room}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="text-slate-400">
-                                      {slot.blockLabel.includes("Lunch")
-                                        ? "Fixed lunch / EP block"
-                                        : "No class assigned to this block yet"}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                    <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-400">
+                      Select a class to edit its details, manage the roster, or review its day block planner.
                     </div>
                   </div>
+                </>
+              )}
+
+              {classesViewMode === "creating" && (
+                <>
+                  {renderBackButton()}
+                  {renderCreateClassFormCard()}
+                  {selectedClassId ? (
+                    <>
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-800">
+                        Nice — your class exists now. Finish the roster steps below, then wrap up setup.
+                      </div>
+                      {renderRosterUploadSection()}
+                      {renderManualRosterSection()}
+                      {renderClassRosterSection()}
+                      <button onClick={finishCreateClassSetup} className="btn-primary w-full">
+                        Finish Class Setup
+                      </button>
+                    </>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-400">
+                      Create the class details first, then the roster steps will appear here.
+                    </div>
+                  )}
+                </>
+              )}
+
+              {classesViewMode === "createSuccess" && (
+                <>
+                  {renderBackButton()}
+                  <div className="card space-y-4 text-center">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-xl font-bold text-emerald-700">
+                      OK
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-900">Class Successfully Added! 🎉</h2>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {recentlyCreatedClassName
+                          ? `${recentlyCreatedClassName} is ready to use.`
+                          : "Your class is ready to use."}
+                      </p>
+                    </div>
+                    <button onClick={exitClassesWorkspace} className="btn-primary mx-auto px-6">
+                      Back to Classes
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {classesViewMode === "editing" && (
+                <>
+                  {renderBackButton()}
+                  {renderClassSummaryCard()}
+                  {renderEditWorkspaceSection()}
                 </>
               )}
             </div>
@@ -2040,6 +2316,86 @@ export default function TeacherDashboard() {
                     <SummaryCard value={studentInsights.stats.attendedDays} label="Attended Days" tone="text-emerald-600" />
                   </div>
 
+                  <div className="grid gap-6 xl:grid-cols-2">
+                    <div className="card space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-slate-900">Schedule Activity</h3>
+                        {editingScheduledActivityId && (
+                          <button onClick={clearActivityForm} className="text-sm text-brand-600 underline">
+                            Cancel edit
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="date"
+                        value={activityDate}
+                        onChange={(event) => setActivityDate(event.target.value)}
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                      <select
+                        value={activityType}
+                        onChange={(event) => {
+                          const nextType = event.target.value;
+                          setActivityType(nextType);
+                          setActivityLabel(nextType === "Other" ? "" : nextType);
+                        }}
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      >
+                        <option value="">Choose activity</option>
+                        {SCHEDULE_ACTIVITY_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                        <option value="Other">Other</option>
+                      </select>
+                      {activityType === "Other" && (
+                        <input
+                          type="text"
+                          value={activityLabel}
+                          onChange={(event) => setActivityLabel(event.target.value)}
+                          placeholder="Add another activity"
+                          className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        />
+                      )}
+                      <textarea
+                        value={activityNotes}
+                        onChange={(event) => setActivityNotes(event.target.value)}
+                        rows={3}
+                        placeholder="Optional notes"
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                      <button onClick={handleSaveScheduledActivity} className="btn-primary w-full">
+                        {editingScheduledActivityId ? "Update Activity" : "Schedule Activity"}
+                      </button>
+                    </div>
+
+                    <div className="card space-y-4">
+                      <h3 className="text-lg font-semibold text-slate-900">Upcoming Activities</h3>
+                      {studentInsights.upcomingActivities.length > 0 ? (
+                        <div className="space-y-3">
+                          {studentInsights.upcomingActivities.map((activity) => (
+                            <div key={activity._id.toString()} className="rounded-2xl border border-slate-200 px-4 py-4">
+                              <div className="font-semibold text-slate-900">{activity.activityLabel}</div>
+                              <div className="mt-1 text-sm text-slate-500">{fmtDateLabel(activity.date)}</div>
+                              {activity.notes && <div className="mt-2 text-sm text-slate-500">{activity.notes}</div>}
+                              <div className="mt-3 flex gap-3">
+                                <button onClick={() => startEditScheduledActivity(activity)} className="text-sm text-brand-600 underline">
+                                  Edit
+                                </button>
+                                <button onClick={() => removeScheduledActivity({ id: activity._id })} className="text-sm text-red-600 underline">
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-400">No scheduled activities yet.</p>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr),minmax(320px,0.75fr)]">
                     <div className="space-y-6">
                       <div className="card space-y-4">
@@ -2077,91 +2433,9 @@ export default function TeacherDashboard() {
                         </div>
                       </div>
 
-                      <div className="card space-y-4">
-                        <h3 className="text-lg font-semibold text-slate-900">Student Schedule Snapshot</h3>
-                        {schedDays.length > 0 ? (
-                          <div className="space-y-4">
-                            {schedDays.map((dayOfWeek) => (
-                              <div key={dayOfWeek} className="rounded-2xl border border-slate-200 px-4 py-4">
-                                <div className="font-semibold text-slate-900">{dayOfWeek}</div>
-                                <div className="mt-3 space-y-2">
-                                  {studentSchedule
-                                    .filter((entry) => entry.dayOfWeek === dayOfWeek)
-                                    .map((entry) => (
-                                      <div key={entry._id.toString()} className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-600">
-                                        {entry.blockLabel ?? "Block"} · {entry.subject} · Room {entry.room}
-                                      </div>
-                                    ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-slate-400">No parsed student schedule is stored for this student yet.</p>
-                        )}
-                      </div>
                     </div>
 
                     <div className="space-y-6">
-                      <div className="card space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-semibold text-slate-900">Schedule Activity</h3>
-                          {editingScheduledActivityId && (
-                            <button onClick={clearActivityForm} className="text-sm text-brand-600 underline">
-                              Cancel edit
-                            </button>
-                          )}
-                        </div>
-                        <input
-                          type="date"
-                          value={activityDate}
-                          onChange={(event) => setActivityDate(event.target.value)}
-                          className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                        />
-                        <input
-                          type="text"
-                          value={activityLabel}
-                          onChange={(event) => setActivityLabel(event.target.value)}
-                          placeholder="Band, sports, counseling..."
-                          className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                        />
-                        <textarea
-                          value={activityNotes}
-                          onChange={(event) => setActivityNotes(event.target.value)}
-                          rows={3}
-                          placeholder="Optional notes"
-                          className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                        />
-                        <button onClick={handleSaveScheduledActivity} className="btn-primary w-full">
-                          {editingScheduledActivityId ? "Update Activity" : "Schedule Activity"}
-                        </button>
-                      </div>
-
-                      <div className="card space-y-4">
-                        <h3 className="text-lg font-semibold text-slate-900">Upcoming Activities</h3>
-                        {studentInsights.upcomingActivities.length > 0 ? (
-                          <div className="space-y-3">
-                            {studentInsights.upcomingActivities.map((activity) => (
-                              <div key={activity._id.toString()} className="rounded-2xl border border-slate-200 px-4 py-4">
-                                <div className="font-semibold text-slate-900">{activity.activityLabel}</div>
-                                <div className="mt-1 text-sm text-slate-500">{fmtDateLabel(activity.date)}</div>
-                                {activity.notes && <div className="mt-2 text-sm text-slate-500">{activity.notes}</div>}
-                                <div className="mt-3 flex gap-3">
-                                  <button onClick={() => startEditScheduledActivity(activity)} className="text-sm text-brand-600 underline">
-                                    Edit
-                                  </button>
-                                  <button onClick={() => removeScheduledActivity({ id: activity._id })} className="text-sm text-red-600 underline">
-                                    Remove
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-slate-400">No scheduled activities yet.</p>
-                        )}
-                      </div>
-
                       <div className="card space-y-4">
                         <h3 className="text-lg font-semibold text-slate-900">Delete Student</h3>
                         <p className="text-sm text-slate-500">
@@ -2197,8 +2471,21 @@ export default function TeacherDashboard() {
         {tab === "rooms" && (
           <div className="mt-6 grid gap-6 xl:grid-cols-[320px,minmax(0,1fr)]">
             <div className="card space-y-3">
-              <h2 className="text-lg font-semibold text-slate-900">Class Rooms</h2>
-              <p className="text-sm text-slate-500">Configure the BLE beacon that each of your teaching rooms should use.</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Class Rooms</h2>
+                  <p className="text-sm text-slate-500">Configure the BLE beacon that each of your teaching rooms should use.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setTab("classes");
+                    startCreateClassFlow();
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+                >
+                  Add Class
+                </button>
+              </div>
               <div className="space-y-2">
                 {roomEntries.map((entry) => (
                   <button
@@ -2219,11 +2506,14 @@ export default function TeacherDashboard() {
 
             <div className="card space-y-4">
               <h2 className="text-lg font-semibold text-slate-900">Room Beacon Setup</h2>
-              {editingRoom ? (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">Display Name</label>
+	              {editingRoom ? (
+	                <>
+	                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+	                    Search for the room beacon over Bluetooth, then save the connection. The beacon UUID is filled in automatically after a successful scan.
+	                  </div>
+	                  <div className="grid gap-4 md:grid-cols-2">
+	                    <div>
+	                      <label className="mb-1 block text-sm font-medium text-slate-700">Display Name</label>
                       <input
                         type="text"
                         value={roomName}
@@ -2231,32 +2521,51 @@ export default function TeacherDashboard() {
                         className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                       />
                     </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">Detected Device</label>
-                      <input
-                        type="text"
-                        value={roomDeviceName}
-                        onChange={(event) => setRoomDeviceName(event.target.value)}
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">UUID</label>
-                    <input
-                      type="text"
-                      value={roomUuid}
-                      onChange={(event) => setRoomUuid(event.target.value)}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button onClick={scanForBeacon} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700">
-                      Scan for Beacon
-                    </button>
-                    <button onClick={saveRoomBeacon} className="btn-primary px-4 py-2 text-sm">
-                      Save Room Beacon
-                    </button>
+	                    <div>
+	                      <label className="mb-1 block text-sm font-medium text-slate-700">Detected Device</label>
+	                      <input
+	                        type="text"
+	                        value={roomDeviceName}
+	                        readOnly
+	                        placeholder="Use Search for Beacon to detect a device"
+	                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+	                      />
+	                    </div>
+	                  </div>
+	                  <div>
+	                    <label className="mb-1 block text-sm font-medium text-slate-700">Beacon UUID</label>
+	                    <input
+	                      type="text"
+	                      value={roomUuid}
+	                      readOnly
+	                      placeholder="Connect to a beacon to fill this in automatically"
+	                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+	                    />
+	                  </div>
+	                  {beaconScanMessage && (
+	                    <div
+	                      className={`rounded-xl px-4 py-3 text-sm ${
+	                        beaconScanState === "error"
+	                          ? "bg-red-50 text-red-700"
+	                          : beaconScanState === "connected"
+	                            ? "bg-emerald-50 text-emerald-700"
+	                            : "bg-slate-100 text-slate-600"
+	                      }`}
+	                    >
+	                      {beaconScanMessage}
+	                    </div>
+	                  )}
+	                  <div className="flex flex-wrap gap-3">
+	                    <button
+	                      onClick={scanForBeacon}
+	                      disabled={beaconScanState === "scanning"}
+	                      className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+	                    >
+	                      {beaconScanState === "scanning" ? "Searching..." : "Search for Beacon"}
+	                    </button>
+	                    <button onClick={saveRoomBeacon} disabled={!roomUuid} className="btn-primary px-4 py-2 text-sm disabled:opacity-50">
+	                      Save Room Beacon
+	                    </button>
                     {locationByRoom.get(editingRoom) && (
                       <button
                         onClick={() => removeLocation({ id: locationByRoom.get(editingRoom)!._id })}

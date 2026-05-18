@@ -682,7 +682,7 @@ export const getTeacherRoster = query({
         ? {
             _id: assignmentContext.activeClass._id,
             name: assignmentContext.activeClass.name,
-            block: assignmentContext.activeClass.block,
+            block: assignmentContext.activeClass.block ?? null,
             room: assignmentContext.activeClass.room,
             grade: assignmentContext.activeClass.grade ?? null,
           }

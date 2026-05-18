@@ -82,7 +82,7 @@ export default defineSchema({
     teacherId: v.id("teachers"),
     name: v.string(),
     subject: v.optional(v.string()),
-    block: v.string(), // "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "EP1" | "EP2"
+    block: v.optional(v.string()), // "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "EP1" | "EP2"
     room: v.string(),
     grade: v.optional(v.string()),
     rotationBlock: v.optional(v.string()),
