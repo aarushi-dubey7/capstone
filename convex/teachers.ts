@@ -1,4 +1,5 @@
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 const SCHOOL_EMAIL_SUFFIX = "@bhpsnj.org";
@@ -83,15 +84,19 @@ export const login = query({
 });
 
 export const getById = query({
-  args: { teacherId: v.id("teachers") },
+  args: { teacherId: v.union(v.id("teachers"), v.string()) },
   handler: async (ctx, { teacherId }) => {
-    const teacher = await ctx.db.get(teacherId);
-    if (!teacher) return null;
-    return {
-      _id: teacher._id,
-      name: teacher.name,
-      email: teacher.email,
-      createdAt: teacher.createdAt,
-    };
+    try {
+      const teacher = await ctx.db.get("teachers", teacherId as Id<"teachers">);
+      if (!teacher) return null;
+      return {
+        _id: teacher._id,
+        name: teacher.name,
+        email: teacher.email,
+        createdAt: teacher.createdAt,
+      };
+    } catch {
+      return null;
+    }
   },
 });
