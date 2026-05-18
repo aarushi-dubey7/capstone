@@ -58,6 +58,9 @@ const ROTATION_DAY_SLOTS = {
   ],
 } as const;
 const WEEKDAYS: Weekday[] = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+function emptyClassForm() {
+  return { name: "", subject: "", room: "", grade: "", rotationBlock: "" };
+}
 
 function todayStr(date = new Date()) {
   const year = date.getFullYear();
@@ -256,8 +259,8 @@ function AuthPanel({
 }
 
 export default function TeacherDashboard() {
-  const location = useLocation();
   const navigate = useNavigate();
+  const location = useLocation();
   const rosterFileRef = useRef<HTMLInputElement>(null);
   const [teacherId, setTeacherId] = useState<Id<"teachers"> | null>(() => {
     const stored = getStoredTeacherId();
@@ -301,8 +304,8 @@ export default function TeacherDashboard() {
   const [roomUuid, setRoomUuid] = useState("");
   const [roomDeviceName, setRoomDeviceName] = useState("");
   const [isEditingClassDetails, setIsEditingClassDetails] = useState(false);
-  const [classForm, setClassForm] = useState({ name: "", subject: "", room: "", grade: "", rotationBlock: "" });
-  const [newClassForm, setNewClassForm] = useState({ name: "", subject: "", room: "", grade: "", rotationBlock: "" });
+  const [classForm, setClassForm] = useState(emptyClassForm);
+  const [newClassForm, setNewClassForm] = useState(emptyClassForm);
   const [manualEntryName, setManualEntryName] = useState("");
   const [manualLinkedStudentId, setManualLinkedStudentId] = useState("");
   const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
@@ -407,11 +410,8 @@ export default function TeacherDashboard() {
   }, [teacherId, teacherProfile]);
 
   useEffect(() => {
-    if (!selectedClassId && teacherClasses.length > 0) {
-      setSelectedClassId(teacherClasses[0]._id);
-    }
     if (selectedClassId && !teacherClasses.some((classDoc) => classDoc._id.toString() === selectedClassId.toString())) {
-      setSelectedClassId(teacherClasses[0]?._id ?? null);
+      setSelectedClassId(null);
     }
   }, [selectedClassId, teacherClasses]);
 
@@ -431,12 +431,11 @@ export default function TeacherDashboard() {
     if (classDetails?.class) {
       setClassForm({
         name: classDetails.class.name,
-        subject: classDetails.class.subject,
+        subject: classDetails.class.subject ?? "",
         room: classDetails.class.room,
         grade: classDetails.class.grade ?? "",
         rotationBlock: classDetails.class.rotationBlock ?? "",
       });
-      setIsEditingClassDetails(false);
     }
   }, [classDetails?.class]);
 
@@ -698,20 +697,55 @@ export default function TeacherDashboard() {
     setRoomDeviceName("");
   }
 
+  function clearRosterBuilderState() {
+    if (rosterPreviewImage?.startsWith("blob:")) {
+      URL.revokeObjectURL(rosterPreviewImage);
+    }
+    setRosterFile(null);
+    setRosterPreviewImage(null);
+    setParsedRosterNames([]);
+    setRosterSelections({});
+    setRosterParseError("");
+    setIsRosterDragActive(false);
+  }
+
+  function clearClassWorkspaceDrafts() {
+    clearRosterBuilderState();
+    setManualEntryName("");
+    setManualLinkedStudentId("");
+    setLinkSelections({});
+    setDeleteConfirmation("");
+    setDeleteError("");
+  }
+
+  function exitClassesWorkspace() {
+    clearClassWorkspaceDrafts();
+    setSelectedClassId(null);
+    setNewClassForm(emptyClassForm());
+  }
+
   async function handleCreateClass() {
-    if (!teacherId || !newClassForm.name.trim() || !newClassForm.subject.trim() || !newClassForm.room.trim()) {
+    if (
+      !teacherId ||
+      !newClassForm.name.trim() ||
+      !newClassForm.subject.trim() ||
+      !newClassForm.room.trim() ||
+      !newClassForm.rotationBlock.trim()
+    ) {
       return;
     }
+    const block = newClassForm.rotationBlock.trim().toUpperCase();
     const classId = await createTeacherClass({
       teacherId,
       name: newClassForm.name.trim(),
       subject: newClassForm.subject.trim(),
+      block,
       room: newClassForm.room.trim(),
       grade: newClassForm.grade.trim() || undefined,
-      rotationBlock: newClassForm.rotationBlock || undefined,
+      rotationBlock: newClassForm.rotationBlock.trim() || undefined,
     });
-    setNewClassForm({ name: "", subject: "", room: "", grade: "", rotationBlock: "" });
     setSelectedClassId(classId);
+    clearClassWorkspaceDrafts();
   }
 
   async function handleUpdateClass() {
@@ -722,22 +756,25 @@ export default function TeacherDashboard() {
       subject: classForm.subject.trim(),
       room: classForm.room.trim(),
       grade: classForm.grade.trim() || undefined,
+      block: classForm.rotationBlock.trim() || undefined,
       rotationBlock: classForm.rotationBlock || undefined,
     });
-    setIsEditingClassDetails(false);
   }
 
   async function handleDeleteClass() {
     if (!teacherId || !selectedClassId || !classDetails?.class) return;
     if (!window.confirm(`Delete ${classDetails.class.name}?`)) return;
     await removeTeacherClass({ teacherId, classId: selectedClassId });
-    setSelectedClassId(null);
+    exitClassesWorkspace();
   }
 
   function applyRosterFile(file: File) {
     if (!file.type.startsWith("image/")) {
       setRosterParseError("Please use an image file for roster upload.");
       return;
+    }
+    if (rosterPreviewImage?.startsWith("blob:")) {
+      URL.revokeObjectURL(rosterPreviewImage);
     }
     setRosterFile(file);
     setParsedRosterNames([]);

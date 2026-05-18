@@ -81,6 +81,7 @@ export default defineSchema({
   teacherClasses: defineTable({
     teacherId: v.id("teachers"),
     name: v.string(),
+    subject: v.optional(v.string()),
     block: v.string(), // "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "EP1" | "EP2"
     room: v.string(),
     grade: v.optional(v.string()),

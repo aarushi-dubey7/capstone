@@ -25,7 +25,7 @@ function todayLong() {
 
 export default function TeacherSettings() {
   const navigate = useNavigate();
-  const [teacherId, setTeacherId] = useState<Id<"teachers"> | null>(() => {
+  const [teacherId] = useState<Id<"teachers"> | null>(() => {
     const stored = getStoredTeacherId();
     return stored ? (stored as Id<"teachers">) : null;
   });
@@ -34,7 +34,7 @@ export default function TeacherSettings() {
   const [editingRotation, setEditingRotation] = useState(true);
   const [selectedBellType, setSelectedBellType] = useState("Standard");
 
-  const teacherProfile = useQuery(api.teachers.getById, teacherId ? { id: teacherId } : "skip");
+  const teacherProfile = useQuery(api.teachers.getById, teacherId ? { teacherId } : "skip");
   const todayRotation = useQuery(api.scheduleRotation.getByDate, { date: todayStr() });
   const recentRotation = useQuery(api.scheduleRotation.listRecent) ?? [];
   const bellSchedules = useQuery(api.bellSchedules.list) ?? [];
