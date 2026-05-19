@@ -373,6 +373,10 @@ export default function TeacherDashboard() {
     api.students.getInsights,
     selectedStudentId ? { studentId: selectedStudentId } : "skip",
   );
+  const notifications = useQuery(
+    api.notifications.listForTeacher,
+    authenticatedTeacherId ? { teacherId: authenticatedTeacherId } : "skip"
+  );
   const liveLocations = useQuery(api.attendance.getLiveLocations) ?? [];
   const allLocations = useQuery(api.locations.list) ?? [];
   const bellSchedules = useQuery(api.bellSchedules.list) ?? [];
@@ -395,9 +399,17 @@ export default function TeacherDashboard() {
   const setStudentStatus = useMutation(api.attendance.setStudentStatus);
   const batchMarkClassUnresolvedAbsent = useMutation(api.attendance.batchMarkClassUnresolvedAbsent);
   const updateSettings = useMutation(api.attendance.updateSettings);
+  const sendToMainOffice = useAction(api.attendanceReport.sendToMainOffice);
+  const officeEmails = useQuery(api.officeEmails.list) ?? [];
+  const addOfficeEmail = useMutation(api.officeEmails.add);
+  const removeOfficeEmail = useMutation(api.officeEmails.remove);
+  const toggleOfficeEmail = useMutation(api.officeEmails.toggleActive);
   const createScheduledActivity = useMutation(api.scheduledActivities.create);
+  const createBatchScheduledActivity = useMutation(api.scheduledActivities.createBatch);
   const updateScheduledActivity = useMutation(api.scheduledActivities.update);
   const removeScheduledActivity = useMutation(api.scheduledActivities.remove);
+  const markNotificationRead = useMutation(api.notifications.markAsRead);
+  const markAllNotificationsRead = useMutation(api.notifications.markAllAsRead);
   const removeStudent = useMutation(api.students.remove);
   const parseRosterImage = useAction(api.groq.parseRosterImage);
   const initBellSchedules = useMutation(api.bellSchedules.initialize);
@@ -405,6 +417,11 @@ export default function TeacherDashboard() {
   const setWeekMap = useMutation(api.weekDayMapping.setWeek);
   const upsertLocation = useMutation(api.locations.upsert);
   const removeLocation = useMutation(api.locations.remove);
+
+  const [taggedStudentIds, setTaggedStudentIds] = useState<Id<"students">[]>([]);
+  const [newOfficeEmail, setNewOfficeEmail] = useState("");
+  const [isSendingToOffice, setIsSendingToOffice] = useState(false);
+  const [sendToOfficeMessage, setSendToOfficeMessage] = useState({ text: "", type: "info" });
 
   useEffect(() => {
     initBellSchedules();
@@ -1003,9 +1020,19 @@ export default function TeacherDashboard() {
 
   async function handleSaveScheduledActivity() {
     if (!selectedStudentId || !activityDate || !activityLabel.trim()) return;
+    
+    const allStudentIds = [...new Set([selectedStudentId, ...taggedStudentIds])];
+
     if (editingScheduledActivityId) {
       await updateScheduledActivity({
         id: editingScheduledActivityId,
+        date: activityDate,
+        activityLabel: activityLabel.trim(),
+        notes: activityNotes.trim() || undefined,
+      });
+    } else if (allStudentIds.length > 1) {
+      await createBatchScheduledActivity({
+        studentIds: allStudentIds,
         date: activityDate,
         activityLabel: activityLabel.trim(),
         notes: activityNotes.trim() || undefined,
@@ -1019,6 +1046,7 @@ export default function TeacherDashboard() {
       });
     }
     clearActivityForm();
+    setTaggedStudentIds([]);
   }
 
   async function handleBatchAbsent() {
@@ -1028,6 +1056,28 @@ export default function TeacherDashboard() {
       classId: teacherRoster.activeClass._id,
       date: todayStr(),
     });
+  }
+
+  async function handleSendToOffice() {
+    if (!authenticatedTeacherId || !teacherRoster?.activeClass) return;
+    setIsSendingToOffice(true);
+    setSendToOfficeMessage({ text: "Sending attendance to main office...", type: "info" });
+    try {
+      await sendToMainOffice({
+        teacherId: authenticatedTeacherId,
+        blockLabel: selectedBlockLabel || undefined,
+        date: todayStr(),
+      });
+      setSendToOfficeMessage({ text: "Attendance successfully sent to the main office!", type: "success" });
+      setTimeout(() => setSendToOfficeMessage({ text: "", type: "info" }), 5000);
+    } catch (error) {
+      setSendToOfficeMessage({
+        text: error instanceof Error ? error.message : "Failed to send attendance.",
+        type: "error",
+      });
+    } finally {
+      setIsSendingToOffice(false);
+    }
   }
 
   async function handleDeleteStudent() {
@@ -1774,6 +1824,59 @@ export default function TeacherDashboard() {
               </div>
             )}
           </div>
+
+          <div className="card space-y-3">
+            <h3 className="font-semibold text-slate-800">Main Office Emails</h3>
+            <p className="text-xs text-slate-500">Attendance reports will be sent to these addresses.</p>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={newOfficeEmail}
+                onChange={(e) => setNewOfficeEmail(e.target.value)}
+                placeholder="office@school.org"
+                className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <button
+                onClick={() => {
+                  if (newOfficeEmail.trim()) {
+                    addOfficeEmail({ email: newOfficeEmail.trim() });
+                    setNewOfficeEmail("");
+                  }
+                }}
+                className="rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-brand-800"
+              >
+                Add
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {officeEmails.map((email) => (
+                <div key={email._id.toString()} className="flex items-center justify-between rounded-xl bg-slate-50 p-3">
+                  <div className="flex flex-col">
+                    <span className={`text-sm font-medium ${email.active ? "text-slate-900" : "text-slate-400 line-through"}`}>
+                      {email.email}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleOfficeEmail({ id: email._id, active: !email.active })}
+                      className={`text-xs font-semibold ${email.active ? "text-amber-600" : "text-emerald-600"} hover:underline`}
+                    >
+                      {email.active ? "Deactivate" : "Activate"}
+                    </button>
+                    <button
+                      onClick={() => removeOfficeEmail({ id: email._id })}
+                      className="text-xs font-semibold text-red-600 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {officeEmails.length === 0 && (
+                <p className="text-center text-xs text-slate-400 italic">No office emails configured.</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1869,6 +1972,44 @@ export default function TeacherDashboard() {
               <SummaryCard value={teacherRoster?.summary.tardy ?? 0} label="Tardy Today" tone="text-violet-600" />
             </div>
 
+            {notifications && notifications.filter(n => !n.read).length > 0 && (
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500">Notifications</h3>
+                  <button 
+                    onClick={() => authenticatedTeacherId && markAllNotificationsRead({ teacherId: authenticatedTeacherId })}
+                    className="text-xs text-brand-600 hover:underline"
+                  >
+                    Mark all as read
+                  </button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  {notifications.filter(n => !n.read).map((notification) => (
+                    <div key={notification._id.toString()} className="relative flex flex-col justify-between rounded-2xl border border-brand-100 bg-brand-50/50 p-4 shadow-sm transition-all hover:bg-brand-50">
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand-700">
+                            {notification.type === "activity_recommendation" ? "Recommendation" : "Info"}
+                          </span>
+                          <button 
+                            onClick={() => markNotificationRead({ id: notification._id })}
+                            className="text-slate-400 hover:text-slate-600"
+                            title="Dismiss"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-slate-700">{notification.message}</p>
+                      </div>
+                      <div className="mt-3 text-[10px] text-slate-400">
+                        {fmtDateLabel(notification.date)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="mt-6 inline-flex rounded-2xl bg-slate-200 p-1">
               {([
                 ["attendance", "Attendance"],
@@ -1933,8 +2074,25 @@ export default function TeacherDashboard() {
                     >
                       Mark Remaining Unresolved as Absent
                     </button>
+                    <button
+                      onClick={handleSendToOffice}
+                      disabled={!teacherRoster?.activeClass || isSendingToOffice}
+                      className="rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-brand-800 disabled:opacity-40"
+                    >
+                      {isSendingToOffice ? "Sending..." : "Send to Main Office"}
+                    </button>
                   </div>
                 </div>
+
+                {sendToOfficeMessage.text && (
+                  <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
+                    sendToOfficeMessage.type === "error" ? "bg-red-50 text-red-700" : 
+                    sendToOfficeMessage.type === "success" ? "bg-emerald-50 text-emerald-700" : 
+                    "bg-blue-50 text-blue-700"
+                  }`}>
+                    {sendToOfficeMessage.text}
+                  </div>
+                )}
 
                 {teacherRoster?.activeClass ? (
                   <>
@@ -2349,6 +2507,42 @@ export default function TeacherDashboard() {
                         ))}
                         <option value="Other">Other</option>
                       </select>
+                      
+                      {!editingScheduledActivityId && (
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Tag other students in this event</label>
+                          <div className="flex flex-wrap gap-2">
+                            {taggedStudentIds.map(id => {
+                              const s = allStudents.find(student => student._id === id);
+                              return s ? (
+                                <span key={id} className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2 py-1 text-xs font-medium text-brand-700">
+                                  {s.name}
+                                  <button onClick={() => setTaggedStudentIds(prev => prev.filter(p => p !== id))} className="text-brand-400 hover:text-brand-600">×</button>
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const val = e.target.value as Id<"students">;
+                              if (val && !taggedStudentIds.includes(val) && val !== selectedStudentId) {
+                                setTaggedStudentIds([...taggedStudentIds, val]);
+                              }
+                            }}
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                          >
+                            <option value="">Select students to tag...</option>
+                            {allStudentOptions
+                              .filter(s => s._id !== selectedStudentId && !taggedStudentIds.includes(s._id))
+                              .map(s => (
+                                <option key={s._id} value={s._id}>{s.name}</option>
+                              ))
+                            }
+                          </select>
+                        </div>
+                      )}
+
                       {activityType === "Other" && (
                         <input
                           type="text"

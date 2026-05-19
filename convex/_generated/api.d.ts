@@ -9,11 +9,14 @@
  */
 
 import type * as attendance from "../attendance.js";
+import type * as attendanceReport from "../attendanceReport.js";
 import type * as bellSchedules from "../bellSchedules.js";
 import type * as calendarData from "../calendarData.js";
 import type * as classes from "../classes.js";
 import type * as groq from "../groq.js";
 import type * as locations from "../locations.js";
+import type * as notifications from "../notifications.js";
+import type * as officeEmails from "../officeEmails.js";
 import type * as scheduleRotation from "../scheduleRotation.js";
 import type * as scheduledActivities from "../scheduledActivities.js";
 import type * as schedules from "../schedules.js";
@@ -30,11 +33,14 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   attendance: typeof attendance;
+  attendanceReport: typeof attendanceReport;
   bellSchedules: typeof bellSchedules;
   calendarData: typeof calendarData;
   classes: typeof classes;
   groq: typeof groq;
   locations: typeof locations;
+  notifications: typeof notifications;
+  officeEmails: typeof officeEmails;
   scheduleRotation: typeof scheduleRotation;
   scheduledActivities: typeof scheduledActivities;
   schedules: typeof schedules;

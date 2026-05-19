@@ -91,7 +91,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_teacherId", ["teacherId"])
-    .index("by_teacherId_and_active", ["teacherId", "active"]),
+    .index("by_teacherId_and_active", ["teacherId", "active"])
+    .index("by_room", ["room"]),
 
   classRosterEntries: defineTable({
     classId: v.id("teacherClasses"),
@@ -160,6 +161,24 @@ export default defineSchema({
   })
     .index("by_student_and_date", ["studentId", "date"])
     .index("by_date", ["date"]),
+
+  notifications: defineTable({
+    teacherId: v.id("teachers"),
+    studentId: v.id("students"),
+    date: v.string(),
+    message: v.string(),
+    type: v.union(v.literal("activity_recommendation"), v.literal("general")),
+    read: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_teacher", ["teacherId", "read"])
+    .index("by_teacher_date", ["teacherId", "date"]),
+
+  mainOfficeEmails: defineTable({
+    email: v.string(),
+    active: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_active", ["active"]),
 
   attendanceSettings: defineTable({
     tardyThreshold: v.number(),
