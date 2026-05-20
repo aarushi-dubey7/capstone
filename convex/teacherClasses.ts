@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
 
 const DAY_LABELS = ["Day 1", "Day 2", "Day 3", "Day 4"] as const;
 const ROTATION_BLOCK_OPTIONS = ["A", "B", "C", "D", "E", "F", "G", "H"];
@@ -48,6 +49,65 @@ const ROTATION_DAY_SLOTS = {
 
 function now() {
   return Date.now();
+}
+
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: string, offset: number) {
+  const next = new Date(`${date}T00:00:00`);
+  next.setDate(next.getDate() + offset);
+  return localDateString(next);
+}
+
+function monthStart(date: string) {
+  const next = new Date(`${date}T00:00:00`);
+  next.setDate(1);
+  return localDateString(next);
+}
+
+function monthEnd(date: string) {
+  const next = new Date(`${date}T00:00:00`);
+  next.setMonth(next.getMonth() + 1, 0);
+  return localDateString(next);
+}
+
+function normalizeBlock(value?: string | null) {
+  if (!value) return null;
+  const normalized = value.trim().toUpperCase().replace(/\s+/g, "");
+  if (normalized === "EP1/LUNCH") return "EP1";
+  if (normalized === "EP2/LUNCH") return "EP2";
+  return normalized;
+}
+
+function blockRunsOnDay(dayLabel: string, block: string | null) {
+  if (!block) return false;
+  const slots = ROTATION_DAY_SLOTS[dayLabel as keyof typeof ROTATION_DAY_SLOTS] ?? [];
+  return slots.some((slot) => normalizeBlock(slot.label) === block);
+}
+
+function latestByStudentForDate(logs: Doc<"logs">[]) {
+  const latest = new Map<string, Doc<"logs">>();
+  for (const log of logs) {
+    const key = `${log.studentId.toString()}-${log.date}`;
+    const current = latest.get(key);
+    if (!current || log.timestamp > current.timestamp) {
+      latest.set(key, log);
+    }
+  }
+  return latest;
+}
+
+function activityAppliesToClassBlock(activity: Doc<"scheduledActivities"> | null | undefined, block: string | null) {
+  if (!activity) return false;
+  const activityBlock = normalizeBlock(activity.block);
+  if (!activityBlock) return true;
+  if (!block) return false;
+  return activityBlock === block;
 }
 
 function normalizeName(name: string) {
@@ -201,6 +261,165 @@ export const getClassDetails = query({
             entry.linkedStudentId ? studentMap.get(entry.linkedStudentId.toString()) ?? null : null,
         }))
         .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    };
+  },
+});
+
+export const getClassStats = query({
+  args: {
+    teacherId: v.id("teachers"),
+    classId: v.id("teacherClasses"),
+    range: v.union(v.literal("week"), v.literal("month"), v.literal("3months")),
+    focusDate: v.optional(v.string()),
+  },
+  handler: async (ctx, { teacherId, classId, range, focusDate }) => {
+    const classDoc = await ctx.db.get(classId);
+    if (!classDoc || classDoc.teacherId !== teacherId) return null;
+
+    const targetBlock = normalizeBlock(classDoc.block ?? classDoc.rotationBlock);
+    const today = localDateString();
+    const safeFocusDate = focusDate ?? today;
+    const rangeStart =
+      range === "week" ? addDays(today, -6) : range === "month" ? addDays(today, -29) : addDays(today, -89);
+    const calendarStart = monthStart(safeFocusDate);
+    const calendarEnd = monthEnd(safeFocusDate);
+    const earliestDate = [rangeStart, calendarStart, safeFocusDate].sort()[0];
+
+    const [rosterEntries, students, statusDocs, scheduledActivities, rotations] = await Promise.all([
+      ctx.db
+        .query("classRosterEntries")
+        .withIndex("by_classId", (q) => q.eq("classId", classId))
+        .collect(),
+      ctx.db.query("students").withIndex("by_role", (q) => q.eq("role", "student")).collect(),
+      ctx.db.query("attendanceStatus").collect(),
+      ctx.db.query("scheduledActivities").collect(),
+      ctx.db.query("scheduleRotation").collect(),
+    ]);
+
+    const linkedStudentIds = rosterEntries
+      .filter((entry) => entry.linkedStudentId)
+      .map((entry) => entry.linkedStudentId!);
+    const linkedStudentIdSet = new Set(linkedStudentIds.map((id) => id.toString()));
+    const linkedStudents = students
+      .filter((student) => linkedStudentIdSet.has(student._id.toString()))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const logsByStudent = await Promise.all(
+      linkedStudents.map(async (student) => ({
+        studentId: student._id,
+        logs: (await ctx.db
+          .query("logs")
+          .withIndex("by_student", (q) => q.eq("studentId", student._id))
+          .collect()).filter((log) => log.date >= earliestDate && log.date <= today),
+      })),
+    );
+
+    const relevantRotations = rotations
+      .filter((rotation) => rotation.date >= earliestDate && rotation.date <= today && rotation.dayLabel !== "No School")
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const classDates = relevantRotations
+      .filter((rotation) => blockRunsOnDay(rotation.dayLabel, targetBlock))
+      .map((rotation) => ({
+        date: rotation.date,
+        dayLabel: rotation.dayLabel,
+        bellScheduleType: rotation.bellScheduleType ?? null,
+      }));
+    const classDateSet = new Set(classDates.map((entry) => entry.date));
+
+    const relevantStatuses = statusDocs.filter(
+      (status) => linkedStudentIdSet.has(status.studentId.toString()) && classDateSet.has(status.date),
+    );
+    const relevantActivities = scheduledActivities.filter(
+      (activity) => linkedStudentIdSet.has(activity.studentId.toString()) && classDateSet.has(activity.date),
+    );
+    const statusByStudentAndDate = new Map(
+      relevantStatuses.map((status) => [`${status.studentId.toString()}-${status.date}`, status]),
+    );
+    const activityByStudentAndDate = new Map(
+      relevantActivities
+        .filter((activity) => activityAppliesToClassBlock(activity, targetBlock))
+        .map((activity) => [`${activity.studentId.toString()}-${activity.date}`, activity]),
+    );
+    const allRelevantLogs = logsByStudent.flatMap((entry) => entry.logs.filter((log) => classDateSet.has(log.date)));
+    const latestLogByStudentAndDate = latestByStudentForDate(allRelevantLogs);
+
+    const summarizedDates = classDates.map((classDate) => {
+      const studentsForDate = linkedStudents.map((student) => {
+        const key = `${student._id.toString()}-${classDate.date}`;
+        const explicit = statusByStudentAndDate.get(key) ?? null;
+        const scheduledActivity = activityByStudentAndDate.get(key) ?? null;
+        const latestLog = latestLogByStudentAndDate.get(key) ?? null;
+        const status =
+          explicit?.status ??
+          (scheduledActivity ? "activity" : latestLog ? "present" : "unresolved");
+
+        return {
+          studentId: student._id,
+          name: student.name,
+          studentNumber: student.studentId,
+          grade: student.grade ?? null,
+          status,
+          isLate: latestLog?.isLate ?? false,
+          activityLabel:
+            explicit?.status === "activity"
+              ? explicit.activityLabel ?? null
+              : scheduledActivity?.activityLabel ?? null,
+          latestCheckInTime: latestLog?.timestamp ?? null,
+          latestLocationName: latestLog?.locationName ?? null,
+        };
+      });
+
+      return {
+        ...classDate,
+        summary: {
+          present: studentsForDate.filter((student) => student.status === "present").length,
+          absent: studentsForDate.filter((student) => student.status === "absent").length,
+          excused: studentsForDate.filter((student) => student.status === "excused").length,
+          activity: studentsForDate.filter((student) => student.status === "activity").length,
+          unresolved: studentsForDate.filter((student) => student.status === "unresolved").length,
+          tardy: studentsForDate.filter((student) => student.isLate).length,
+        },
+        students: studentsForDate,
+      };
+    });
+
+    const rangeDates = summarizedDates.filter((entry) => entry.date >= rangeStart && entry.date <= today);
+    const focusDateSummary =
+      summarizedDates.find((entry) => entry.date === safeFocusDate) ?? null;
+    const calendarDates = summarizedDates.filter(
+      (entry) => entry.date >= calendarStart && entry.date <= calendarEnd,
+    );
+
+    return {
+      class: {
+        _id: classDoc._id,
+        name: classDoc.name,
+        subject: classDoc.subject ?? null,
+        room: classDoc.room,
+        grade: classDoc.grade ?? null,
+        block: classDoc.block ?? null,
+        rotationBlock: classDoc.rotationBlock ?? null,
+      },
+      linkedStudentCount: linkedStudents.length,
+      range,
+      rangeStart,
+      rangeEnd: today,
+      summary: {
+        classDates: rangeDates.length,
+        present: rangeDates.reduce((sum, entry) => sum + entry.summary.present, 0),
+        absent: rangeDates.reduce((sum, entry) => sum + entry.summary.absent, 0),
+        excused: rangeDates.reduce((sum, entry) => sum + entry.summary.excused, 0),
+        activity: rangeDates.reduce((sum, entry) => sum + entry.summary.activity, 0),
+        tardy: rangeDates.reduce((sum, entry) => sum + entry.summary.tardy, 0),
+      },
+      dates: rangeDates.sort((a, b) => b.date.localeCompare(a.date)),
+      focusDate: safeFocusDate,
+      focusDateSummary,
+      calendarMonth: {
+        monthStart: calendarStart,
+        monthEnd: calendarEnd,
+        dates: calendarDates,
+      },
     };
   },
 });

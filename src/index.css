@@ -110,6 +110,22 @@
   color: #334155 !important;
 }
 
+.dark .class-stats-date-selected.bg-brand-50 {
+  color: #0f172a !important;
+}
+
+.dark .class-stats-date-selected.bg-brand-50 .text-slate-900 {
+  color: #0f172a !important;
+}
+
+.dark .class-stats-date-selected.bg-brand-50 .text-slate-500 {
+  color: #334155 !important;
+}
+
+.dark .class-stats-date-selected.bg-brand-50 .text-slate-400 {
+  color: #475569 !important;
+}
+
 .dark .teacher-tab-nav {
   background-color: #e2e8f0 !important;
 }

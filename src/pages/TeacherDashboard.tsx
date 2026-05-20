@@ -14,7 +14,9 @@ type ManualStatus = "present" | "absent" | "excused";
 type AuthMode = "login" | "register";
 type BeaconScanState = "idle" | "scanning" | "connected" | "error";
 type ClassesViewMode = "landing" | "creating" | "createSuccess" | "editing";
-type ClassWorkspaceSection = "details" | "rosterUpload" | "manualAdd" | "roster" | "planner";
+type ClassWorkspaceSection = "details" | "stats" | "rosterUpload" | "manualAdd" | "roster" | "planner";
+type ClassStatsRange = "week" | "month" | "3months";
+type ClassStatsBulkFilter = "present" | "absent" | "excused" | "activity" | "tardy";
 
 const DAY_OPTIONS = ["Day 1", "Day 2", "Day 3", "Day 4"] as const;
 type DayOption = (typeof DAY_OPTIONS)[number];
@@ -23,6 +25,7 @@ const ROTATION_BLOCK_OPTIONS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 const CLASS_BLOCK_OPTIONS = ["A", "B", "C", "D", "E", "F", "G", "H", "EP1", "EP2"] as const;
 const CLASS_WORKSPACE_SECTIONS: Array<{ key: ClassWorkspaceSection; label: string }> = [
   { key: "details", label: "Class Details" },
+  { key: "stats", label: "Class Stats" },
   { key: "rosterUpload", label: "Roster Upload" },
   { key: "manualAdd", label: "Manual Roster Add" },
   { key: "roster", label: "Class Roster" },
@@ -114,6 +117,27 @@ function fmtDateLabel(date: string) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function fmtMonthLabel(date: string) {
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function monthGridDays(date: string) {
+  const base = new Date(`${date}T00:00:00`);
+  const start = new Date(base);
+  start.setDate(1);
+  start.setDate(start.getDate() - start.getDay());
+  const days: string[] = [];
+  for (let index = 0; index < 42; index += 1) {
+    const next = new Date(start);
+    next.setDate(start.getDate() + index);
+    days.push(todayStr(next));
+  }
+  return days;
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -322,6 +346,10 @@ export default function TeacherDashboard() {
   const [beaconScanMessage, setBeaconScanMessage] = useState("");
   const [classesViewMode, setClassesViewMode] = useState<ClassesViewMode>("landing");
   const [classWorkspaceSection, setClassWorkspaceSection] = useState<ClassWorkspaceSection>("details");
+  const [classStatsRange, setClassStatsRange] = useState<ClassStatsRange>("week");
+  const [classStatsDate, setClassStatsDate] = useState(todayStr());
+  const [classStatsCalendarView, setClassStatsCalendarView] = useState(false);
+  const [classStatsBulkFilter, setClassStatsBulkFilter] = useState<ClassStatsBulkFilter | null>(null);
   const [recentlyCreatedClassName, setRecentlyCreatedClassName] = useState("");
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   const [createClassError, setCreateClassError] = useState("");
@@ -363,6 +391,17 @@ export default function TeacherDashboard() {
   const classDetails = useQuery(
     api.teacherClasses.getClassDetails,
     authenticatedTeacherId && selectedClassId ? { teacherId: authenticatedTeacherId, classId: selectedClassId } : "skip",
+  );
+  const classStats = useQuery(
+    api.teacherClasses.getClassStats,
+    authenticatedTeacherId && selectedClassId
+      ? {
+          teacherId: authenticatedTeacherId,
+          classId: selectedClassId,
+          range: classStatsRange,
+          focusDate: classStatsDate || undefined,
+        }
+      : "skip",
   );
   const dayAssignments = useQuery(
     api.teacherClasses.getDayAssignments,
@@ -830,6 +869,10 @@ export default function TeacherDashboard() {
     clearClassWorkspaceDrafts();
     setClassesViewMode("landing");
     setClassWorkspaceSection("details");
+    setClassStatsRange("week");
+    setClassStatsDate(todayStr());
+    setClassStatsCalendarView(false);
+    setClassStatsBulkFilter(null);
     setSelectedClassId(null);
     setNewClassForm(emptyClassForm());
     setRecentlyCreatedClassName("");
@@ -846,6 +889,10 @@ export default function TeacherDashboard() {
     setSelectedClassId(classId);
     setClassesViewMode("editing");
     setClassWorkspaceSection("details");
+    setClassStatsRange("week");
+    setClassStatsDate(todayStr());
+    setClassStatsCalendarView(false);
+    setClassStatsBulkFilter(null);
   }
 
   async function handleCreateClass() {
@@ -897,6 +944,9 @@ export default function TeacherDashboard() {
       block: classForm.rotationBlock.trim() || undefined,
       rotationBlock: classForm.rotationBlock || undefined,
     });
+    setClassStatsDate(todayStr());
+    setClassWorkspaceSection("stats");
+    setClassStatsBulkFilter(null);
   }
 
   async function handleDeleteClass() {
@@ -1568,6 +1618,332 @@ export default function TeacherDashboard() {
     );
   }
 
+  function renderClassStatsSection() {
+    if (!classDetails?.class) return null;
+    if (classStats === undefined) {
+      return (
+        <div className="card space-y-4">
+          <h3 className="text-lg font-semibold text-slate-900">Class Stats</h3>
+          <p className="text-sm text-slate-400">Loading class attendance trends...</p>
+        </div>
+      );
+    }
+    if (!classStats) {
+      return (
+        <div className="card space-y-4">
+          <h3 className="text-lg font-semibold text-slate-900">Class Stats</h3>
+          <p className="text-sm text-slate-400">This class stats view is not available right now.</p>
+        </div>
+      );
+    }
+
+    const calendarEntries = new Map(classStats.calendarMonth.dates.map((entry) => [entry.date, entry]));
+    const calendarDays = monthGridDays(classStats.calendarMonth.monthStart);
+    const activeMonthKey = classStats.calendarMonth.monthStart.slice(0, 7);
+    const focusStudents = classStats.focusDateSummary?.students ?? [];
+    const bulkEntries = classStats.dates.flatMap((entry) =>
+      entry.students
+        .filter((student) => {
+          if (!classStatsBulkFilter) return false;
+          if (classStatsBulkFilter === "tardy") return student.isLate;
+          return student.status === classStatsBulkFilter;
+        })
+        .map((student) => ({
+          date: entry.date,
+          dayLabel: entry.dayLabel,
+          student,
+        })),
+    );
+    const bulkFilterLabel =
+      classStatsBulkFilter === "present"
+        ? "Present"
+        : classStatsBulkFilter === "absent"
+          ? "Absent"
+          : classStatsBulkFilter === "excused"
+            ? "Excused"
+            : classStatsBulkFilter === "activity"
+              ? "Activity"
+              : classStatsBulkFilter === "tardy"
+                ? "Tardy"
+                : "";
+
+    return (
+      <div className="space-y-6">
+        <div className="card space-y-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Class Stats</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Review attendance in bulk for {classDetails.class.name} only, then drill into one class date at a time.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setClassStatsCalendarView((current) => !current)}
+              className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current" strokeWidth="2">
+                <rect x="3" y="4" width="18" height="17" rx="2" />
+                <path d="M8 2v4M16 2v4M3 10h18" />
+              </svg>
+              <span>{classStatsCalendarView ? "List View" : "Calendar View"}</span>
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {([
+                ["week", "Week"],
+                ["month", "Month"],
+                ["3months", "3 Months"],
+              ] as Array<[ClassStatsRange, string]>).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setClassStatsRange(value)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                    classStatsRange === value ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Search Class Date
+              </label>
+              <input
+                type="date"
+                value={classStatsDate}
+                onChange={(event) => setClassStatsDate(event.target.value)}
+                className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-5">
+            <button type="button" onClick={() => setClassStatsBulkFilter("present")} className="text-left">
+              <SummaryCard value={classStats.summary.present} label="Present" tone="text-emerald-600" />
+            </button>
+            <button type="button" onClick={() => setClassStatsBulkFilter("absent")} className="text-left">
+              <SummaryCard value={classStats.summary.absent} label="Absent" tone="text-red-600" />
+            </button>
+            <button type="button" onClick={() => setClassStatsBulkFilter("excused")} className="text-left">
+              <SummaryCard value={classStats.summary.excused} label="Excused" tone="text-violet-600" />
+            </button>
+            <button type="button" onClick={() => setClassStatsBulkFilter("activity")} className="text-left">
+              <SummaryCard value={classStats.summary.activity} label="Activity" tone="text-sky-600" />
+            </button>
+            <button type="button" onClick={() => setClassStatsBulkFilter("tardy")} className="text-left">
+              <SummaryCard value={classStats.summary.tardy} label="Tardy" tone="text-amber-600" />
+            </button>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+            {classStats.summary.classDates} class dates in this view · {classStats.linkedStudentCount} linked students · {fmtDateLabel(classStats.rangeStart)} through {fmtDateLabel(classStats.rangeEnd)}
+          </div>
+        </div>
+
+        {classStatsBulkFilter && (
+          <div className="card space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">{bulkFilterLabel} Students</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Showing {bulkEntries.length} {bulkEntries.length === 1 ? "result" : "results"} for {classDetails.class.name} in the current {classStatsRange} view.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setClassStatsBulkFilter(null)}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+                aria-label="Close bulk class stats list"
+              >
+                ×
+              </button>
+            </div>
+
+            {bulkEntries.length > 0 ? (
+              <div className="space-y-3">
+                {bulkEntries.map((entry) => (
+                  <div key={`${entry.date}-${entry.student.studentId.toString()}-${entry.student.status}-${entry.student.isLate ? "late" : "ontime"}`} className="rounded-2xl border border-slate-200 px-4 py-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="font-semibold text-slate-900">{entry.student.name}</div>
+                        <div className="mt-1 text-sm text-slate-500">
+                          {fmtDateLabel(entry.date)} · {entry.dayLabel}
+                          {entry.student.grade ? ` · Grade ${entry.student.grade}` : ""}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          ID: {entry.student.studentNumber}
+                          {entry.student.activityLabel ? ` · ${entry.student.activityLabel}` : ""}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-start gap-2 lg:items-end">
+                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(entry.student.status)}`}>
+                          {classStatsBulkFilter === "tardy" ? "Tardy" : statusLabel(entry.student.status)}
+                        </span>
+                        <div className="text-xs text-slate-500">
+                          {entry.student.latestCheckInTime
+                            ? `${fmt(entry.student.latestCheckInTime)}${entry.student.isLate ? " · Late" : ""}`
+                            : "No check-in"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-400">
+                No students matched {bulkFilterLabel.toLowerCase()} in this class during the selected range.
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr),minmax(360px,0.85fr)]">
+          <div className="card space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {classStatsCalendarView ? fmtMonthLabel(classStats.calendarMonth.monthStart) : "Attendance by Class Date"}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {classStatsCalendarView
+                    ? "Tap a class day in the calendar to inspect that date."
+                    : "Each row shows totals for this class only."}
+                </p>
+              </div>
+            </div>
+
+            {classStatsCalendarView ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                    <div key={day}>{day}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-2">
+                  {calendarDays.map((date) => {
+                    const entry = calendarEntries.get(date) ?? null;
+                    const isActiveMonth = date.slice(0, 7) === activeMonthKey;
+                    const isSelected = date === classStats.focusDate;
+                    return (
+                        <button
+                          key={date}
+                          type="button"
+                          onClick={() => setClassStatsDate(date)}
+                        className={`class-stats-date-selected min-h-28 rounded-2xl border px-2 py-2 text-left transition-colors ${
+                          isSelected
+                            ? "border-brand-300 bg-brand-50"
+                            : isActiveMonth
+                              ? "border-slate-200 bg-white hover:border-brand-200"
+                              : "border-slate-200 bg-slate-50 text-slate-400"
+                        }`}
+                      >
+                        <div className="text-xs font-semibold">{new Date(`${date}T00:00:00`).getDate()}</div>
+                        {entry ? (
+                          <div className="mt-2 space-y-1 text-[11px]">
+                            <div className="text-red-600">{entry.summary.absent} absent</div>
+                            <div className="text-sky-600">{entry.summary.activity} activity</div>
+                            <div className="text-amber-600">{entry.summary.tardy} tardy</div>
+                          </div>
+                        ) : (
+                          <div className="mt-3 text-[11px] text-slate-400">
+                            {isActiveMonth ? "No class" : ""}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : classStats.dates.length > 0 ? (
+              <div className="space-y-3">
+                {classStats.dates.map((entry) => (
+                  <button
+                    key={entry.date}
+                    type="button"
+                    onClick={() => setClassStatsDate(entry.date)}
+                    className={`class-stats-date-selected w-full rounded-2xl border px-4 py-4 text-left transition-colors ${
+                      classStats.focusDate === entry.date ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-200"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="font-semibold text-slate-900">{fmtDateLabel(entry.date)}</div>
+                        <div className="mt-1 text-sm text-slate-500">{entry.dayLabel}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                        <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">{entry.summary.present} present</span>
+                        <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">{entry.summary.absent} absent</span>
+                        <span className="rounded-full bg-violet-100 px-3 py-1 text-violet-700">{entry.summary.excused} excused</span>
+                        <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-700">{entry.summary.activity} activity</span>
+                        <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">{entry.summary.tardy} tardy</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">No class dates were found in this range yet.</p>
+            )}
+          </div>
+
+          <div className="card space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Specific Date</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Review every linked student for one class date.
+              </p>
+            </div>
+
+            {classStats.focusDateSummary ? (
+              <>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <div className="font-semibold text-slate-900">{fmtDateLabel(classStats.focusDateSummary.date)}</div>
+                  <div className="mt-1 text-sm text-slate-500">{classStats.focusDateSummary.dayLabel}</div>
+                </div>
+                <div className="space-y-3">
+                  {focusStudents.map((student) => (
+                    <div key={student.studentId.toString()} className="rounded-2xl border border-slate-200 px-4 py-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <div className="font-semibold text-slate-900">{student.name}</div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            ID: {student.studentNumber}
+                            {student.grade ? ` · Grade ${student.grade}` : ""}
+                          </div>
+                          {student.activityLabel && (
+                            <div className="mt-1 text-xs text-slate-400">{student.activityLabel}</div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-start gap-2 lg:items-end">
+                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(student.status)}`}>
+                            {statusLabel(student.status)}
+                          </span>
+                          <div className="text-xs text-slate-500">
+                            {student.latestCheckInTime ? `${fmt(student.latestCheckInTime)}${student.isLate ? " · Late" : ""}` : "No check-in"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 px-5 py-10 text-center text-sm text-slate-400">
+                This class does not meet on the selected date, or there is no class attendance history yet.
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
+    );
+  }
+
   function renderDayBlockPlannerSection() {
     return (
       <div className="card space-y-5">
@@ -1632,6 +2008,7 @@ export default function TeacherDashboard() {
     }
 
     if (classWorkspaceSection === "details") return renderClassDetailsSection();
+    if (classWorkspaceSection === "stats") return renderClassStatsSection();
     if (classWorkspaceSection === "rosterUpload") return renderRosterUploadSection();
     if (classWorkspaceSection === "manualAdd") return renderManualRosterSection();
     if (classWorkspaceSection === "roster") return renderClassRosterSection();
