@@ -2,6 +2,8 @@ import { mutation, query, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 
+const VALID_BLOCKS = ["A", "B", "C", "D", "E", "F", "G", "H", "EP1", "EP2"] as const;
+
 function localDateString(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -15,11 +17,35 @@ function assertFutureOrToday(date: string) {
   }
 }
 
+function normalizeBlock(value?: string | null) {
+  if (!value) return undefined;
+  const normalized = value.trim().toUpperCase().replace(/\s+/g, "");
+  if (normalized === "EP1/LUNCH") return "EP1";
+  if (normalized === "EP2/LUNCH") return "EP2";
+  if (!VALID_BLOCKS.includes(normalized as (typeof VALID_BLOCKS)[number])) {
+    throw new Error("Invalid block. Choose A-H, EP1, or EP2.");
+  }
+  return normalized;
+}
+
+function normalizeBlockLoose(value?: string | null) {
+  if (!value) return undefined;
+  const normalized = value.trim().toUpperCase().replace(/\s+/g, "");
+  if (normalized === "EP1/LUNCH") return "EP1";
+  if (normalized === "EP2/LUNCH") return "EP2";
+  return VALID_BLOCKS.includes(normalized as (typeof VALID_BLOCKS)[number]) ? normalized : normalized;
+}
+
+function blockDisplay(block?: string | null) {
+  return block ? ` for Block ${block}` : "";
+}
+
 async function notifyTeachersForStudentActivity(
   ctx: MutationCtx,
   studentId: Id<"students">,
   date: string,
-  activityLabel: string
+  activityLabel: string,
+  block?: string,
 ) {
   const student = await ctx.db.get(studentId);
   if (!student) return;
@@ -37,7 +63,12 @@ async function notifyTeachersForStudentActivity(
     .withIndex("by_student", (q) => q.eq("studentId", studentId))
     .collect();
   
-  const todaySchedules = studentSchedules.filter(s => s.dayOfWeek === dayLabel);
+  const normalizedBlock = normalizeBlock(block);
+  const todaySchedules = studentSchedules.filter((schedule) => {
+    if (schedule.dayOfWeek !== dayLabel) return false;
+    if (!normalizedBlock) return true;
+    return normalizeBlockLoose(schedule.blockLabel) === normalizedBlock;
+  });
 
   for (const schedule of todaySchedules) {
     const classesInRoom = await ctx.db
@@ -47,7 +78,10 @@ async function notifyTeachersForStudentActivity(
 
     const matchingClass = classesInRoom.find(c => 
       c.active && 
-      (c.rotationBlock === schedule.blockLabel || c.block === schedule.blockLabel)
+      (
+        normalizeBlockLoose(c.rotationBlock) === normalizeBlockLoose(schedule.blockLabel) ||
+        normalizeBlockLoose(c.block) === normalizeBlockLoose(schedule.blockLabel)
+      )
     );
 
     if (matchingClass) {
@@ -63,7 +97,7 @@ async function notifyTeachersForStudentActivity(
           teacherId: matchingClass.teacherId,
           studentId,
           date,
-          message: `${student.name} is tagged in "${activityLabel}" on ${date}. Recommend marking as excused absence.`,
+          message: `${student.name} is tagged in "${activityLabel}" on ${date}${blockDisplay(normalizedBlock)}. Recommend marking as activity.`,
           type: "activity_recommendation",
           read: false,
           createdAt: Date.now(),
@@ -78,19 +112,24 @@ export const create = mutation({
     studentId: v.id("students"),
     date: v.string(),
     activityLabel: v.string(),
+    block: v.optional(v.string()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     assertFutureOrToday(args.date);
-    const existing = await ctx.db
+    const normalizedBlock = normalizeBlock(args.block);
+    const existing = (
+      await ctx.db
       .query("scheduledActivities")
       .withIndex("by_student_and_date", (q) => q.eq("studentId", args.studentId).eq("date", args.date))
-      .first();
+      .collect()
+    ).find((activity) => normalizeBlock(activity.block) === normalizedBlock);
 
     let id;
     if (existing) {
       await ctx.db.patch(existing._id, {
         activityLabel: args.activityLabel.trim(),
+        block: normalizedBlock,
         notes: args.notes?.trim() || undefined,
         updatedAt: Date.now(),
       });
@@ -100,13 +139,14 @@ export const create = mutation({
         studentId: args.studentId,
         date: args.date,
         activityLabel: args.activityLabel.trim(),
+        block: normalizedBlock,
         notes: args.notes?.trim() || undefined,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
     }
 
-    await notifyTeachersForStudentActivity(ctx, args.studentId, args.date, args.activityLabel);
+    await notifyTeachersForStudentActivity(ctx, args.studentId, args.date, args.activityLabel, normalizedBlock);
     return id;
   },
 });
@@ -116,20 +156,25 @@ export const createBatch = mutation({
     studentIds: v.array(v.id("students")),
     date: v.string(),
     activityLabel: v.string(),
+    block: v.optional(v.string()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     assertFutureOrToday(args.date);
+    const normalizedBlock = normalizeBlock(args.block);
     const results = [];
     for (const studentId of args.studentIds) {
-      const existing = await ctx.db
+      const existing = (
+        await ctx.db
         .query("scheduledActivities")
         .withIndex("by_student_and_date", (q) => q.eq("studentId", studentId).eq("date", args.date))
-        .first();
+        .collect()
+      ).find((activity) => normalizeBlock(activity.block) === normalizedBlock);
 
       if (existing) {
         await ctx.db.patch(existing._id, {
           activityLabel: args.activityLabel.trim(),
+          block: normalizedBlock,
           notes: args.notes?.trim() || undefined,
           updatedAt: Date.now(),
         });
@@ -139,13 +184,14 @@ export const createBatch = mutation({
           studentId,
           date: args.date,
           activityLabel: args.activityLabel.trim(),
+          block: normalizedBlock,
           notes: args.notes?.trim() || undefined,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
         results.push(id);
       }
-      await notifyTeachersForStudentActivity(ctx, studentId, args.date, args.activityLabel);
+      await notifyTeachersForStudentActivity(ctx, studentId, args.date, args.activityLabel, normalizedBlock);
     }
     return results;
   },
@@ -156,6 +202,7 @@ export const update = mutation({
     id: v.id("scheduledActivities"),
     date: v.string(),
     activityLabel: v.string(),
+    block: v.optional(v.string()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -164,15 +211,17 @@ export const update = mutation({
     if (!existing) {
       throw new Error("Scheduled activity not found.");
     }
+    const normalizedBlock = normalizeBlock(args.block);
 
     await ctx.db.patch(args.id, {
       date: args.date,
       activityLabel: args.activityLabel.trim(),
+      block: normalizedBlock,
       notes: args.notes?.trim() || undefined,
       updatedAt: Date.now(),
     });
 
-    await notifyTeachersForStudentActivity(ctx, existing.studentId, args.date, args.activityLabel);
+    await notifyTeachersForStudentActivity(ctx, existing.studentId, args.date, args.activityLabel, normalizedBlock);
     return args.id;
   },
 });

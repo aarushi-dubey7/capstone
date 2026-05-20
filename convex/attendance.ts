@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 
 const DEFAULT_TARDY_THRESHOLD = 3;
 const DEFAULT_REMINDER_MINUTES = 15;
+const VALID_CLASS_BLOCKS = ["A", "B", "C", "D", "E", "F", "G", "H", "EP1", "EP2"] as const;
 const ROTATION_DAY_SLOTS = {
   "Day 1": ["A", "B", "C", "EP 1/Lunch", "EP 2/Lunch", "E", "F", "G"],
   "Day 2": ["B", "C", "D", "EP 1/Lunch", "EP 2/Lunch", "F", "G", "H"],
@@ -64,6 +65,25 @@ function latestByStudent(logs: Doc<"logs">[]) {
 
 function uniqueLabels(values: string[]) {
   return [...new Set(values)].filter(Boolean);
+}
+
+function normalizeClassBlock(value?: string | null) {
+  if (!value) return null;
+  const normalized = value.trim().toUpperCase().replace(/\s+/g, "");
+  if (normalized === "EP1/LUNCH") return "EP1";
+  if (normalized === "EP2/LUNCH") return "EP2";
+  return VALID_CLASS_BLOCKS.includes(normalized as (typeof VALID_CLASS_BLOCKS)[number]) ? normalized : normalized;
+}
+
+function activityAppliesToBlock(
+  activity: Doc<"scheduledActivities"> | null | undefined,
+  activeBlock: string | null,
+) {
+  if (!activity) return false;
+  const activityBlock = normalizeClassBlock(activity.block);
+  if (!activityBlock) return true;
+  if (!activeBlock) return false;
+  return activityBlock === normalizeClassBlock(activeBlock);
 }
 
 async function loadSettings(ctx: QueryCtx | MutationCtx) {
@@ -531,6 +551,9 @@ export const getTeacherRoster = query({
       await Promise.all(linkedEntries.map((entry) => ctx.db.get(entry.linkedStudentId!)))
     ).filter((student): student is NonNullable<typeof student> => student !== null && student.role === "student");
     const studentIds = new Set(linkedStudents.map((student) => student._id.toString()));
+    const activeBlockCode = normalizeClassBlock(
+      assignmentContext.activeClass?.block ?? assignmentContext.selectedBlockLabel,
+    );
 
     const [statusDocs, scheduledActivities, allLogsByStudent] = await Promise.all([
       ctx.db
@@ -554,7 +577,11 @@ export const getTeacherRoster = query({
     ]);
 
     const filteredStatuses = statusDocs.filter((status) => studentIds.has(status.studentId.toString()));
-    const filteredActivities = scheduledActivities.filter((activity) => studentIds.has(activity.studentId.toString()));
+    const filteredActivities = scheduledActivities.filter(
+      (activity) =>
+        studentIds.has(activity.studentId.toString()) &&
+        activityAppliesToBlock(activity, activeBlockCode),
+    );
     const statusByStudent = new Map(filteredStatuses.map((status) => [status.studentId.toString(), status]));
     const activityByStudent = new Map(filteredActivities.map((activity) => [activity.studentId.toString(), activity]));
     const todayLogs = allLogsByStudent.flatMap((entry) => entry.logs.filter((log) => log.date === targetDate));
@@ -578,6 +605,8 @@ export const getTeacherRoster = query({
         const status: AttendanceStatus =
           explicit?.status ??
           (scheduledActivity ? "activity" : latestLog ? "present" : "unresolved");
+        const recommendedAction =
+          scheduledActivity && explicit?.status !== "activity" ? "activity" : null;
 
         return {
           studentId: student._id,
@@ -603,6 +632,8 @@ export const getTeacherRoster = query({
           tardyCount,
           thresholdReached: tardyCount >= settings.tardyThreshold,
           scheduledActivityId: scheduledActivity?._id ?? null,
+          scheduledActivityBlock: scheduledActivity?.block ?? null,
+          recommendedAction,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -717,6 +748,7 @@ export const batchMarkClassUnresolvedAbsent = mutation({
     if (!classDoc || classDoc.teacherId !== teacherId) {
       throw new Error("Class not found.");
     }
+    const activeBlockCode = normalizeClassBlock(classDoc.block ?? classDoc.rotationBlock ?? null);
 
     const rosterEntries = await ctx.db
       .query("classRosterEntries")
@@ -747,7 +779,11 @@ export const batchMarkClassUnresolvedAbsent = mutation({
     );
     const activityByStudent = new Map(
       scheduledActivities
-        .filter((activity) => linkedStudentKeys.has(activity.studentId.toString()))
+        .filter(
+          (activity) =>
+            linkedStudentKeys.has(activity.studentId.toString()) &&
+            activityAppliesToBlock(activity, activeBlockCode),
+        )
         .map((activity) => [activity.studentId.toString(), activity]),
     );
 

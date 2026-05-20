@@ -155,6 +155,7 @@ export default defineSchema({
     studentId: v.id("students"),
     date: v.string(),
     activityLabel: v.string(),
+    block: v.optional(v.string()),
     notes: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),

@@ -9,7 +9,7 @@ import { clearStoredTeacherId, getStoredTeacherId, setStoredTeacherId } from "..
 
 type Tab = "attendance" | "classes" | "schedules" | "rooms" | "movement";
 type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
-type RosterFilter = "all" | "unresolved" | "absent" | "resolved" | "tardy";
+type RosterFilter = "all" | "present" | "absent" | "excused" | "activity";
 type ManualStatus = "present" | "absent" | "excused";
 type AuthMode = "login" | "register";
 type BeaconScanState = "idle" | "scanning" | "connected" | "error";
@@ -20,6 +20,7 @@ const DAY_OPTIONS = ["Day 1", "Day 2", "Day 3", "Day 4"] as const;
 type DayOption = (typeof DAY_OPTIONS)[number];
 const SCHEDULE_ACTIVITY_OPTIONS = ["Music Lesson", "NJHS Event", "Field Trip"] as const;
 const ROTATION_BLOCK_OPTIONS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const CLASS_BLOCK_OPTIONS = ["A", "B", "C", "D", "E", "F", "G", "H", "EP1", "EP2"] as const;
 const CLASS_WORKSPACE_SECTIONS: Array<{ key: ClassWorkspaceSection; label: string }> = [
   { key: "details", label: "Class Details" },
   { key: "rosterUpload", label: "Roster Upload" },
@@ -296,6 +297,7 @@ export default function TeacherDashboard() {
   const [activityDate, setActivityDate] = useState(todayStr());
   const [activityType, setActivityType] = useState("");
   const [activityLabel, setActivityLabel] = useState("");
+  const [activityBlock, setActivityBlock] = useState("");
   const [activityNotes, setActivityNotes] = useState("");
   const [editingScheduledActivityId, setEditingScheduledActivityId] = useState<Id<"scheduledActivities"> | null>(null);
   const [quickActivityStudentId, setQuickActivityStudentId] = useState<Id<"students"> | null>(null);
@@ -571,12 +573,10 @@ export default function TeacherDashboard() {
         (row.grade?.toLowerCase().includes(term) ?? false) ||
         (row.latestRoom?.toLowerCase().includes(term) ?? false);
       if (!matchesSearch) return false;
-      if (rosterFilter === "unresolved") return row.status === "unresolved";
+      if (rosterFilter === "present") return row.status === "present";
       if (rosterFilter === "absent") return row.status === "absent";
-      if (rosterFilter === "resolved") {
-        return row.status === "present" || row.status === "activity" || row.status === "excused";
-      }
-      if (rosterFilter === "tardy") return row.isLateToday || row.thresholdReached;
+      if (rosterFilter === "excused") return row.status === "excused";
+      if (rosterFilter === "activity") return row.status === "activity";
       return true;
     });
   }, [rosterFilter, rosterSearch, teacherRoster?.students]);
@@ -585,6 +585,13 @@ export default function TeacherDashboard() {
     () => teacherStudents.find((student) => student._id.toString() === selectedStudentId?.toString()) ?? null,
     [selectedStudentId, teacherStudents],
   );
+  const selectedStudentBlockOptions = useMemo(() => {
+    if (!selectedStudent) return [...CLASS_BLOCK_OPTIONS];
+    const linkedBlocks = selectedStudent.linkedClasses
+      .map((entry) => entry.block?.trim().toUpperCase())
+      .filter((block): block is string => Boolean(block));
+    return linkedBlocks.length ? [...new Set(linkedBlocks)] : [...CLASS_BLOCK_OPTIONS];
+  }, [selectedStudent]);
   const attendanceLookupMatch = useMemo(
     () =>
       attendanceLookupDate && studentInsights
@@ -1010,6 +1017,7 @@ export default function TeacherDashboard() {
     setActivityDate(todayStr());
     setActivityType("");
     setActivityLabel("");
+    setActivityBlock("");
     setActivityNotes("");
   }
 
@@ -1017,6 +1025,7 @@ export default function TeacherDashboard() {
     _id: Id<"scheduledActivities">;
     date: string;
     activityLabel: string;
+    block?: string;
     notes?: string;
   }) {
     setEditingScheduledActivityId(activity._id);
@@ -1028,6 +1037,7 @@ export default function TeacherDashboard() {
       setActivityType("Other");
       setActivityLabel(activity.activityLabel);
     }
+    setActivityBlock(activity.block ?? "");
     setActivityNotes(activity.notes ?? "");
   }
 
@@ -1041,6 +1051,7 @@ export default function TeacherDashboard() {
         id: editingScheduledActivityId,
         date: activityDate,
         activityLabel: activityLabel.trim(),
+        block: activityBlock || undefined,
         notes: activityNotes.trim() || undefined,
       });
     } else if (allStudentIds.length > 1) {
@@ -1048,6 +1059,7 @@ export default function TeacherDashboard() {
         studentIds: allStudentIds,
         date: activityDate,
         activityLabel: activityLabel.trim(),
+        block: activityBlock || undefined,
         notes: activityNotes.trim() || undefined,
       });
     } else {
@@ -1055,6 +1067,7 @@ export default function TeacherDashboard() {
         studentId: selectedStudentId,
         date: activityDate,
         activityLabel: activityLabel.trim(),
+        block: activityBlock || undefined,
         notes: activityNotes.trim() || undefined,
       });
     }
@@ -2091,7 +2104,7 @@ export default function TeacherDashboard() {
                         className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                       />
                       <div className="flex flex-wrap gap-2">
-                        {(["all", "unresolved", "absent", "resolved", "tardy"] as RosterFilter[]).map((filter) => (
+                        {(["all", "present", "absent", "excused", "activity"] as RosterFilter[]).map((filter) => (
                           <button
                             key={filter}
                             onClick={() => setRosterFilter(filter)}
@@ -2099,13 +2112,13 @@ export default function TeacherDashboard() {
                           >
                             {filter === "all"
                               ? "All"
-                              : filter === "unresolved"
-                                ? "Unresolved"
+                              : filter === "present"
+                                ? "Present"
                                 : filter === "absent"
                                   ? "Absent"
-                                  : filter === "resolved"
-                                    ? "Resolved"
-                                    : "Tardy"}
+                                  : filter === "excused"
+                                    ? "Excused"
+                                    : "Activity"}
                           </button>
                         ))}
                       </div>
@@ -2184,11 +2197,20 @@ export default function TeacherDashboard() {
                                       setQuickActivityStudentId(row.studentId);
                                       setQuickActivityLabel(row.activityLabel ?? "");
                                     }}
-                                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-700"
+                                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                      row.recommendedAction === "activity"
+                                        ? "border-sky-300 bg-sky-50 text-sky-700 ring-1 ring-sky-200 hover:border-sky-400"
+                                        : "border-slate-300 text-slate-700 hover:border-sky-300 hover:text-sky-700"
+                                    }`}
                                   >
-                                    Activity
+                                    {row.recommendedAction === "activity" ? "Activity Recommended" : "Activity"}
                                   </button>
                                 </div>
+                                {row.recommendedAction === "activity" && (
+                                  <div className="text-xs font-medium text-sky-700">
+                                    Scheduled activity{row.scheduledActivityBlock ? ` for Block ${row.scheduledActivityBlock}` : ""}.
+                                  </div>
+                                )}
                                 {quickActivityStudentId?.toString() === row.studentId.toString() && (
                                   <div className="flex gap-2">
                                     <input
@@ -2481,6 +2503,18 @@ export default function TeacherDashboard() {
                         ))}
                         <option value="Other">Other</option>
                       </select>
+                      <select
+                        value={activityBlock}
+                        onChange={(event) => setActivityBlock(event.target.value)}
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      >
+                        <option value="">All day or no specific block</option>
+                        {selectedStudentBlockOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option} Block
+                          </option>
+                        ))}
+                      </select>
                       
                       {!editingScheduledActivityId && (
                         <div className="space-y-2">
@@ -2545,7 +2579,10 @@ export default function TeacherDashboard() {
                           {studentInsights.upcomingActivities.map((activity) => (
                             <div key={activity._id.toString()} className="rounded-2xl border border-slate-200 px-4 py-4">
                               <div className="font-semibold text-slate-900">{activity.activityLabel}</div>
-                              <div className="mt-1 text-sm text-slate-500">{fmtDateLabel(activity.date)}</div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {fmtDateLabel(activity.date)}
+                                {activity.block ? ` · Block ${activity.block}` : ""}
+                              </div>
                               {activity.notes && <div className="mt-2 text-sm text-slate-500">{activity.notes}</div>}
                               <div className="mt-3 flex gap-3">
                                 <button onClick={() => startEditScheduledActivity(activity)} className="text-sm text-brand-600 underline">

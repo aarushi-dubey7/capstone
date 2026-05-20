@@ -12,6 +12,10 @@ function normalizeRoom(locationName: string) {
   return locationName.replace(/^Room\s+/i, "").trim().toLowerCase();
 }
 
+function formatActivityWithBlock(activity: { activityLabel: string; block?: string | null }) {
+  return activity.block ? `${activity.activityLabel} · Block ${activity.block}` : activity.activityLabel;
+}
+
 export const register = mutation({
   args: {
     name: v.string(),
@@ -93,7 +97,12 @@ export const getInsights = query({
     const classByRoom = new Map(classes.map((entry) => [entry.room.toLowerCase(), entry]));
     const logsByDate = new Map<string, typeof logs>();
     const explicitByDate = new Map(explicitStatuses.map((status) => [status.date, status]));
-    const scheduledByDate = new Map(scheduledActivities.map((activity) => [activity.date, activity]));
+    const scheduledByDate = new Map<string, typeof scheduledActivities>();
+    for (const activity of scheduledActivities) {
+      const existing = scheduledByDate.get(activity.date) ?? [];
+      existing.push(activity);
+      scheduledByDate.set(activity.date, existing);
+    }
     const schoolDays = new Set<string>();
     const today = localDateString();
 
@@ -114,16 +123,17 @@ export const getInsights = query({
       logsByDate.set(log.date, existing);
     }
 
-    const dates = new Set<string>([...logsByDate.keys(), ...explicitByDate.keys()]);
+    const dates = new Set<string>([...logsByDate.keys(), ...explicitByDate.keys(), ...scheduledByDate.keys()]);
     const attendanceByDay = [...dates]
       .sort((a, b) => b.localeCompare(a))
       .map((date) => {
         const dayLogs = [...(logsByDate.get(date) ?? [])].sort((a, b) => a.timestamp - b.timestamp);
         const explicit = explicitByDate.get(date);
-        const scheduled = scheduledByDate.get(date);
+        const scheduled = scheduledByDate.get(date) ?? [];
+        const firstScheduled = scheduled[0] ?? null;
         const derivedStatus =
           explicit?.status ??
-          (scheduled && date >= today ? "activity" : dayLogs.length > 0 ? "present" : "unresolved");
+          (firstScheduled ? "activity" : dayLogs.length > 0 ? "present" : "unresolved");
 
         return {
           date,
@@ -131,7 +141,9 @@ export const getInsights = query({
           activityLabel:
             explicit?.status === "activity"
               ? explicit.activityLabel ?? null
-              : scheduled?.activityLabel ?? null,
+              : firstScheduled
+                ? scheduled.map((activity) => formatActivityWithBlock(activity)).join(", ")
+                : null,
           reason: explicit?.reason ?? null,
           entries: dayLogs.map((log) => {
             const classEntry = classByRoom.get(normalizeRoom(log.locationName));
@@ -160,7 +172,9 @@ export const getInsights = query({
     for (const date of schoolDays) {
       const explicit = explicitByDate.get(date);
       const dayLogs = logsByDate.get(date) ?? [];
-      const derivedStatus = explicit?.status ?? (dayLogs.length > 0 ? "present" : "unresolved");
+      const scheduled = scheduledByDate.get(date)?.[0] ?? null;
+      const derivedStatus =
+        explicit?.status ?? (scheduled ? "activity" : dayLogs.length > 0 ? "present" : "unresolved");
 
       if (derivedStatus === "activity") {
         activityCount += 1;
@@ -175,7 +189,7 @@ export const getInsights = query({
 
     const todayExplicit = explicitByDate.get(today);
     const todayLogs = logsByDate.get(today) ?? [];
-    const todayScheduled = scheduledByDate.get(today);
+    const todayScheduled = scheduledByDate.get(today)?.[0] ?? null;
     const currentDayStatus =
       todayExplicit?.status ??
       (todayScheduled ? "activity" : todayLogs.length > 0 ? "present" : "unresolved");
@@ -195,7 +209,11 @@ export const getInsights = query({
       attendanceByDay,
       upcomingActivities: scheduledActivities
         .filter((activity) => activity.date >= today)
-        .sort((a, b) => a.date.localeCompare(b.date)),
+        .sort((a, b) => {
+          const dateCompare = a.date.localeCompare(b.date);
+          if (dateCompare !== 0) return dateCompare;
+          return (a.block ?? "").localeCompare(b.block ?? "");
+        }),
     };
   },
 });
