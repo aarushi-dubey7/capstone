@@ -31,6 +31,13 @@ const CLASS_WORKSPACE_SECTIONS: Array<{ key: ClassWorkspaceSection; label: strin
   { key: "roster", label: "Class Roster" },
   { key: "planner", label: "Day Block Planner" },
 ];
+const CLASS_PRIMARY_NAV_SECTIONS: Array<{ key: "details" | "stats"; label: string }> = [
+  { key: "stats", label: "Class Stats" },
+  { key: "details", label: "Class Details" },
+];
+const CLASS_DETAILS_NAV_SECTIONS = CLASS_WORKSPACE_SECTIONS.filter(
+  (section) => section.key !== "details" && section.key !== "stats",
+);
 const ROTATION_DAY_SLOTS = {
   "Day 1": [
     { timeRange: "8:17-9:13", label: "A" },
@@ -155,6 +162,15 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function parseRosterText(text: string) {
+  return [...new Set(
+    text
+      .split(/\r?\n|,/)
+      .map((entry) => entry.replace(/\t+/g, " ").trim())
+      .filter(Boolean),
+  )];
 }
 
 function statusBadge(status: string) {
@@ -373,6 +389,7 @@ export default function TeacherDashboard() {
   const [deleteError, setDeleteError] = useState("");
   const [rosterPreviewImage, setRosterPreviewImage] = useState<string | null>(null);
   const [rosterFile, setRosterFile] = useState<File | null>(null);
+  const [rosterTextInput, setRosterTextInput] = useState("");
   const [parsedRosterNames, setParsedRosterNames] = useState<string[]>([]);
   const [rosterSelections, setRosterSelections] = useState<Record<string, string>>({});
   const [rosterParseError, setRosterParseError] = useState("");
@@ -885,6 +902,7 @@ export default function TeacherDashboard() {
     }
     setRosterFile(null);
     setRosterPreviewImage(null);
+    setRosterTextInput("");
     setParsedRosterNames([]);
     setRosterSelections({});
     setRosterParseError("");
@@ -936,6 +954,15 @@ export default function TeacherDashboard() {
       startWidth: classWorkspaceWidth,
     };
     setIsResizingClassWorkspace(true);
+  }
+
+  function selectClassStatsDate(date: string) {
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    setClassStatsDate(date);
+    requestAnimationFrame(() => {
+      window.scrollTo(scrollX, scrollY);
+    });
   }
 
   async function handleCreateClass() {
@@ -1029,9 +1056,24 @@ export default function TeacherDashboard() {
   function handleRosterPaste(event: ReactClipboardEvent<HTMLDivElement>) {
     const imageItem = Array.from(event.clipboardData.items).find((item) => item.type.startsWith("image/"));
     const file = imageItem?.getAsFile();
-    if (!file) return;
+    if (file) {
+      event.preventDefault();
+      applyRosterFile(file);
+      return;
+    }
+
+    const pastedText = event.clipboardData.getData("text/plain").trim();
+    if (!pastedText) return;
     event.preventDefault();
-    applyRosterFile(file);
+    if (rosterPreviewImage?.startsWith("blob:")) {
+      URL.revokeObjectURL(rosterPreviewImage);
+    }
+    setRosterFile(null);
+    setRosterPreviewImage(null);
+    setRosterSelections({});
+    setRosterParseError("");
+    setRosterTextInput(pastedText);
+    setParsedRosterNames(parseRosterText(pastedText));
   }
 
   async function handleParseRoster() {
@@ -1047,6 +1089,22 @@ export default function TeacherDashboard() {
     } finally {
       setIsParsingRoster(false);
     }
+  }
+
+  function handleParseRosterText() {
+    const names = parseRosterText(rosterTextInput);
+    if (names.length === 0) {
+      setRosterParseError("Paste at least one student name to build a roster from text.");
+      return;
+    }
+    if (rosterPreviewImage?.startsWith("blob:")) {
+      URL.revokeObjectURL(rosterPreviewImage);
+    }
+    setRosterFile(null);
+    setRosterPreviewImage(null);
+    setRosterSelections({});
+    setRosterParseError("");
+    setParsedRosterNames(names);
   }
 
   async function handleSaveUploadedRoster() {
@@ -1338,6 +1396,7 @@ export default function TeacherDashboard() {
 
   function renderClassSummaryCard() {
     if (!classDetails?.class) return null;
+    const isDetailsWorkspace = classWorkspaceSection !== "stats";
 
     return (
       <div className="card space-y-5">
@@ -1358,17 +1417,42 @@ export default function TeacherDashboard() {
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {CLASS_WORKSPACE_SECTIONS.map((section) => (
-            <button
-              key={section.key}
-              type="button"
-              onClick={() => setClassWorkspaceSection(section.key)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${ classWorkspaceSection === section.key ? "bg-brand-700 text-white" : "border border-slate-300 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700" }`}
-            >
-              {section.label}
-            </button>
-          ))}
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {CLASS_PRIMARY_NAV_SECTIONS.map((section) => (
+              <button
+                key={section.key}
+                type="button"
+                onClick={() => setClassWorkspaceSection(section.key)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                  (section.key === "details" && isDetailsWorkspace) || classWorkspaceSection === section.key
+                    ? "bg-brand-700 text-white"
+                    : "border border-slate-300 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                }`}
+              >
+                {section.label}
+              </button>
+            ))}
+          </div>
+
+          {isDetailsWorkspace && (
+            <div className="flex flex-wrap gap-2">
+              {CLASS_DETAILS_NAV_SECTIONS.map((section) => (
+                <button
+                  key={section.key}
+                  type="button"
+                  onClick={() => setClassWorkspaceSection(section.key)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                    classWorkspaceSection === section.key
+                      ? "bg-brand-700 text-white"
+                      : "border border-slate-300 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                  }`}
+                >
+                  {section.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1432,6 +1516,15 @@ export default function TeacherDashboard() {
     );
   }
 
+  function renderClassDetailsWorkspaceSection() {
+    return (
+      <div className="space-y-6">
+        <div className="class-workspace-enter">{renderClassDetailsSection()}</div>
+        <div className="class-workspace-enter class-workspace-enter-delay-1">{renderClassRosterSection()}</div>
+      </div>
+    );
+  }
+
   function renderRosterUploadSection() {
     return (
       <div className="card space-y-4">
@@ -1439,7 +1532,7 @@ export default function TeacherDashboard() {
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Roster Upload</h3>
             <p className="text-sm text-slate-500">
-              Upload a roster image, drop one here, or paste from your clipboard, then confirm the matches.
+              Upload a roster image, paste a Google Classroom students screenshot, or paste roster text here, then confirm the matches.
             </p>
           </div>
           <button
@@ -1482,12 +1575,32 @@ export default function TeacherDashboard() {
         >
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="font-semibold text-slate-800">Drop roster image here or click to choose a file</div>
-              <div className="mt-1 text-xs text-slate-500">You can also click this box and press paste with an image from your clipboard.</div>
+              <div className="font-semibold text-slate-800">Drop a roster image here or click to choose a file</div>
             </div>
             <div className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
               {rosterFile ? rosterFile.name : "PNG, JPG, or screenshot"}
             </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div className="flex flex-col gap-3">
+            <div>
+              <h4 className="font-semibold text-slate-900">Paste roster text</h4>
+              <p className="mt-1 text-sm text-slate-500">
+                Paste student names from Google Classroom, a spreadsheet, or a copied list. Use one name per line or comma-separated names.
+              </p>
+            </div>
+            <textarea
+              value={rosterTextInput}
+              onChange={(event) => setRosterTextInput(event.target.value)}
+              rows={5}
+              placeholder={"Aarushi Dubey\nDavi Example\nBig Beta"}
+              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <button onClick={handleParseRosterText} className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700">
+              Build Roster From Text
+            </button>
           </div>
         </div>
 
@@ -1845,8 +1958,8 @@ export default function TeacherDashboard() {
           </div>
         )}
 
-        <div className="mx-auto grid w-full max-w-[1320px] gap-6 xl:grid-cols-[minmax(620px,760px),minmax(420px,520px)] xl:justify-center">
-          <div className={`card space-y-4 ${classStatsCalendarView ? "class-stats-resizable-card" : ""}`}>
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 xl:flex-row xl:flex-nowrap xl:items-start xl:justify-center">
+          <div className={`card w-full min-w-0 xl:max-w-none xl:flex-1 space-y-4 ${classStatsCalendarView ? "class-stats-resizable-card" : ""}`}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
@@ -1858,11 +1971,6 @@ export default function TeacherDashboard() {
                     : "Each row shows totals for this class only."}
                 </p>
               </div>
-              {classStatsCalendarView && (
-                <div className="class-stats-resize-hint rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Hover to resize
-                </div>
-              )}
             </div>
 
             {classStatsCalendarView ? (
@@ -1881,7 +1989,7 @@ export default function TeacherDashboard() {
                         <button
                           key={date}
                           type="button"
-                          onClick={() => setClassStatsDate(date)}
+                          onClick={() => selectClassStatsDate(date)}
                         className={`class-stats-date-selected min-h-28 rounded-2xl border px-2 py-2 text-left transition-colors ${
                           isSelected
                             ? "border-brand-300 bg-brand-50"
@@ -1913,7 +2021,7 @@ export default function TeacherDashboard() {
                   <button
                     key={entry.date}
                     type="button"
-                    onClick={() => setClassStatsDate(entry.date)}
+                    onClick={() => selectClassStatsDate(entry.date)}
                     className={`class-stats-date-selected w-full rounded-2xl border px-4 py-4 text-left transition-colors ${
                       classStats.focusDate === entry.date ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-200"
                     }`}
@@ -1939,7 +2047,7 @@ export default function TeacherDashboard() {
             )}
           </div>
 
-          <div className="card min-w-[420px] space-y-4">
+          <div className="card w-full min-w-0 xl:w-[420px] xl:shrink-0 space-y-4">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">Specific Date</h3>
               <p className="mt-1 text-sm text-slate-500">
@@ -2055,12 +2163,12 @@ export default function TeacherDashboard() {
       );
     }
 
-    if (classWorkspaceSection === "details") return renderClassDetailsSection();
-    if (classWorkspaceSection === "stats") return renderClassStatsSection();
-    if (classWorkspaceSection === "rosterUpload") return renderRosterUploadSection();
-    if (classWorkspaceSection === "manualAdd") return renderManualRosterSection();
-    if (classWorkspaceSection === "roster") return renderClassRosterSection();
-    return renderDayBlockPlannerSection();
+    if (classWorkspaceSection === "details") return renderClassDetailsWorkspaceSection();
+    if (classWorkspaceSection === "stats") return <div className="class-workspace-enter">{renderClassStatsSection()}</div>;
+    if (classWorkspaceSection === "rosterUpload") return <div className="class-workspace-enter">{renderRosterUploadSection()}</div>;
+    if (classWorkspaceSection === "manualAdd") return <div className="class-workspace-enter">{renderManualRosterSection()}</div>;
+    if (classWorkspaceSection === "roster") return <div className="class-workspace-enter">{renderClassRosterSection()}</div>;
+    return <div className="class-workspace-enter">{renderDayBlockPlannerSection()}</div>;
   }
 
   function renderSettingsPanel() {
@@ -2705,8 +2813,8 @@ export default function TeacherDashboard() {
         )}
 
         {tab === "classes" && (
-          <div className="mt-6 flex items-start gap-6 overflow-x-auto pb-2">
-            <div className="w-[280px] shrink-0 space-y-6">
+          <div className="mt-6 flex flex-col gap-6 xl:flex-row xl:items-start">
+            <div className="space-y-6 xl:w-[280px] xl:shrink-0">
               <div className="card space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-slate-900">Your Classes</h2>
@@ -2736,13 +2844,13 @@ export default function TeacherDashboard() {
             </div>
 
             <div
-              className={`relative shrink-0 space-y-6 ${isResizingClassWorkspace ? "select-none" : ""}`}
-              style={{ width: classWorkspaceWidth }}
+              className={`relative min-w-0 flex-1 space-y-6 ${isResizingClassWorkspace ? "select-none" : ""}`}
+              style={{ width: `min(100%, ${classWorkspaceWidth}px)` }}
             >
               <button
                 type="button"
                 onMouseDown={beginClassWorkspaceResize}
-                className={`class-workspace-resize-handle ${isResizingClassWorkspace ? "is-active" : ""}`}
+                className={`class-workspace-resize-handle hidden xl:block ${isResizingClassWorkspace ? "is-active" : ""}`}
                 aria-label="Resize class workspace"
               />
               {classesViewMode === "landing" && (

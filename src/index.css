@@ -18,6 +18,43 @@
   }
 }
 
+.class-workspace-enter {
+  animation: classWorkspaceEnter 340ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: top center;
+}
+
+.class-workspace-enter-delay-1 {
+  animation-delay: 55ms;
+  animation-fill-mode: both;
+}
+
+.class-workspace-enter-delay-2 {
+  animation-delay: 110ms;
+  animation-fill-mode: both;
+}
+
+.class-workspace-enter-delay-3 {
+  animation-delay: 165ms;
+  animation-fill-mode: both;
+}
+
+.class-workspace-enter-delay-4 {
+  animation-delay: 220ms;
+  animation-fill-mode: both;
+}
+
+@keyframes classWorkspaceEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* ── Robust Dark Mode Implementation ── */
 
 /* Page Background */
@@ -128,29 +165,13 @@
 
 .class-stats-resizable-card {
   min-height: 28rem;
-  min-width: 20rem;
+  min-width: 0;
   max-width: 100%;
-  overflow: auto;
-  resize: both;
-}
-
-.class-stats-resizable-card .class-stats-resize-hint {
-  opacity: 0.55;
-  transition: opacity 150ms ease, transform 150ms ease;
+  overflow: hidden;
 }
 
 .class-stats-resizable-card:hover {
   box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.24);
-}
-
-.class-stats-resizable-card:hover .class-stats-resize-hint {
-  opacity: 1;
-  transform: translateY(-1px);
-}
-
-.class-stats-resizable-card::-webkit-resizer {
-  background:
-    linear-gradient(135deg, transparent 0 45%, rgba(59, 130, 246, 0.55) 45% 55%, transparent 55% 100%);
 }
 
 .class-workspace-resize-handle {
