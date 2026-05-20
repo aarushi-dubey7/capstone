@@ -86,41 +86,41 @@ export default function Home() {
       {/* Login Modal */}
       {showLogin && !storedId && (
         <div className="w-full max-w-sm mb-6 relative z-10">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl space-y-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl space-y-4">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Welcome Back</h2>
-              <p className="text-sm text-slate-500 mt-0.5">Log in with your school email and student ID</p>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Welcome Back</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Log in with your school email and student ID</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">School Email</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">School Email</label>
               <div className="flex">
                 <input
                   type="text"
                   value={loginEmail}
                   onChange={(e) => { setLoginEmail(e.target.value.replace(/[@\s]/g, "")); setLoginError(""); setSubmitted(false); }}
                   placeholder="ajohnson"
-                  className="flex-1 border border-slate-300 rounded-l-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 border-r-0"
+                  className="flex-1 border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 rounded-l-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 border-r-0"
                 />
-                <span className="inline-flex items-center px-3 py-3 bg-slate-100 border border-slate-300 rounded-r-xl text-sm text-slate-500 font-medium">
+                <span className="inline-flex items-center px-3 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-r-xl text-sm text-slate-500 dark:text-slate-400 font-medium">
                   @bhpsnj.org
                 </span>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Student ID</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Student ID</label>
               <input
                 type="text"
                 value={loginStudentId}
                 onChange={(e) => { setLoginStudentId(e.target.value); setLoginError(""); setSubmitted(false); }}
                 placeholder="123456"
-                className="w-full border border-slate-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                className="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
 
             {loginError && (
-              <p className="text-red-600 text-sm bg-red-50 rounded-xl px-4 py-2.5">{loginError}</p>
+              <p className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-950/30 rounded-xl px-4 py-2.5">{loginError}</p>
             )}
 
             <button
@@ -137,14 +137,14 @@ export default function Home() {
             </button>
 
             <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-slate-200" />
+              <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
               <span className="text-xs text-slate-400">or</span>
-              <div className="flex-1 h-px bg-slate-200" />
+              <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800" />
             </div>
 
             <button
               onClick={() => navigate("/onboarding")}
-              className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-slate-300 text-slate-600 hover:border-brand-400 hover:text-brand-700 transition-all"
+              className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-brand-400 hover:text-brand-700 transition-all"
             >
               Create New Account
             </button>
@@ -162,17 +162,17 @@ export default function Home() {
       <div className="grid gap-4 w-full max-w-sm relative z-10">
         <button
           onClick={goToStudent}
-          className="flex items-center gap-4 bg-white rounded-2xl p-6 shadow-xl hover:shadow-2xl active:scale-95 transition-all text-left"
+          className="flex items-center gap-4 bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-xl hover:shadow-2xl active:scale-95 transition-all text-left"
         >
-          <div className="w-12 h-12 rounded-xl bg-brand-100 flex items-center justify-center shrink-0">
-            <svg className="w-6 h-6 text-brand-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-12 h-12 rounded-xl bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center shrink-0">
+            <svg className="w-6 h-6 text-brand-700 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
           <div>
-            <div className="font-semibold text-slate-900">Student Check-In</div>
-            <div className="text-sm text-slate-500 mt-0.5">
+            <div className="font-semibold text-slate-900 dark:text-slate-100">Student Check-In</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
               {storedId ? "Tap to mark your attendance" : "Log in or register"}
             </div>
           </div>

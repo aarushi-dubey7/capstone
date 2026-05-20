@@ -75,14 +75,14 @@ export default function TeacherSettings() {
       return null;
     }
     return (
-      <div className="min-h-screen bg-slate-100 py-10 text-center text-sm text-slate-500">
+      <div className="min-h-screen bg-slate-50 py-10 text-center text-sm text-slate-500">
         Loading teacher settings…
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-slate-50">
       <header className="bg-brand-900 px-6 py-6 text-white shadow-lg">
         <div className="mx-auto flex max-w-7xl items-start justify-between gap-4">
           <div>
@@ -143,11 +143,7 @@ export default function TeacherSettings() {
                     <button
                       key={day}
                       onClick={() => setRotationLabel(day)}
-                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                        rotationLabel === day
-                          ? "border-brand-700 bg-brand-700 text-white"
-                          : "border-slate-300 text-slate-600 hover:border-brand-400"
-                      }`}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${ rotationLabel === day ? "border-brand-700 bg-brand-700 text-white" : "border-slate-300 text-slate-600 hover:border-brand-400" }`}
                     >
                       {day}
                     </button>
@@ -193,11 +189,7 @@ export default function TeacherSettings() {
                       dayLabel: todayRotation?.dayLabel,
                     });
                   }}
-                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-sm font-medium transition-all ${
-                    selectedBellType === schedule.type
-                      ? "border-brand-200 bg-brand-50 text-brand-800 ring-2 ring-brand-500/20"
-                      : "border-slate-200 text-slate-600 hover:border-brand-300"
-                  }`}
+                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-sm font-medium transition-all ${ selectedBellType === schedule.type ? "border-brand-200 bg-brand-50 text-brand-800 ring-2 ring-brand-500/20" : "border-slate-200 text-slate-600 hover:border-brand-300" }`}
                 >
                   {schedule.type}
                   {selectedBellType === schedule.type && <div className="h-2 w-2 rounded-full bg-brand-600" />}

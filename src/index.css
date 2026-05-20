@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-slate-50 text-slate-900 antialiased transition-colors duration-300;
   }
 }
 
@@ -14,8 +14,167 @@
            rounded-2xl px-6 py-4 transition-all duration-150 shadow-md;
   }
   .card {
-    @apply bg-white rounded-2xl shadow-sm border border-slate-200 p-6;
+    @apply bg-white rounded-2xl shadow-sm border border-slate-200 p-6 transition-all duration-300;
   }
+}
+
+/* ── Robust Dark Mode Implementation ── */
+
+/* Page Background */
+.dark body {
+  background-color: #1a1e2e !important;
+  color: #f8fafc !important;
+}
+
+/* Header */
+.dark header.bg-brand-900 {
+  background-color: #131624 !important;
+}
+
+/* Cards & Containers (Turning white bubbles into navy bubbles) */
+.dark .card, 
+.dark .bg-white,
+.dark .bg-slate-50 {
+  background-color: #1e293b !important; /* Consistently dark navy */
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Sub-containers & Secondary Backgrounds */
+.dark .bg-slate-100 {
+  background-color: #0f172a !important; /* Even darker for depth */
+}
+
+/* Specific Active/Selected States (Only when explicitly marked) */
+.dark .active-pill,
+.dark [aria-selected="true"],
+.dark .bg-brand-700,
+.dark .bg-brand-800 {
+  background-color: #312e81 !important; /* Deep indigo for active/selected items */
+  color: #ffffff !important;
+}
+
+/* Custom Text Selection */
+::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: inherit;
+}
+
+.dark ::selection {
+  background-color: rgba(129, 140, 248, 0.4);
+  color: #ffffff;
+}
+
+/* Reset forced text colors in bubbles to allow local classes to shine */
+.dark [class*="bg-white"][class*="shadow"] * {
+  color: inherit;
+}
+
+/* But ensure text remains readable */
+.dark .text-slate-900, .dark .text-slate-800, .dark .text-slate-700 {
+  color: #f1f5f9 !important;
+}
+
+.dark .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+.dark .room-card-selected .text-slate-900 {
+  color: #0f172a !important;
+}
+
+.dark .room-card-selected .text-slate-500 {
+  color: #334155 !important;
+}
+
+.dark .student-card-selected .text-slate-900 {
+  color: #0f172a !important;
+}
+
+.dark .student-card-selected .text-slate-500 {
+  color: #334155 !important;
+}
+
+.dark .student-card-selected .text-slate-400 {
+  color: #475569 !important;
+}
+
+.dark .class-card-selected .text-slate-900 {
+  color: #0f172a !important;
+}
+
+.dark .class-card-selected .text-slate-500 {
+  color: #334155 !important;
+}
+
+.dark .teacher-tab-nav {
+  background-color: #e2e8f0 !important;
+}
+
+.dark .teacher-tab-nav .teacher-tab-button {
+  color: #334155 !important;
+}
+
+.dark .teacher-tab-nav .teacher-tab-button:hover {
+  color: #0f172a !important;
+}
+
+.dark .teacher-tab-nav .teacher-tab-button.teacher-tab-active {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+/* Force light mode header to stay navy blue */
+header.bg-brand-900 {
+  background-color: #1e3a8a !important; /* Stronger navy for light mode header */
+}
+
+.dark header.bg-brand-900 {
+  background-color: #131624 !important;
+}
+
+/* Student Status Badges (Keep visible but slightly tuned) */
+.dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.15) !important; color: #34d399 !important; }
+.dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.15) !important; color: #f87171 !important; }
+.dark .bg-sky-100 { background-color: rgba(14, 165, 233, 0.15) !important; color: #38bdf8 !important; }
+.dark .bg-violet-100 { background-color: rgba(139, 92, 246, 0.15) !important; color: #a78bfa !important; }
+.dark .bg-amber-100 { background-color: rgba(245, 158, 11, 0.15) !important; color: #fbbf24 !important; }
+
+/* Form controls in dark mode */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1;
+}
+
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.9);
+}
+
+.dark option {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+/* Dashboard Action Buttons (Keep outline clean) */
+.dark .border-slate-300.text-slate-700 {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #cbd5e1 !important;
+}
+
+.dark .border-slate-300.text-slate-700:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
 }
 
 /* ── Animated Gradient Background ── */

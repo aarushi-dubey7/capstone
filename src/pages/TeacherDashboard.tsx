@@ -4,6 +4,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import AttendanceMap from "../components/AttendanceMap";
+import DarkModeToggle from "../components/DarkModeToggle";
 import { clearStoredTeacherId, getStoredTeacherId, setStoredTeacherId } from "../hooks/useTeacher";
 
 type Tab = "attendance" | "classes" | "schedules" | "rooms" | "movement";
@@ -158,7 +159,7 @@ function InfoTooltip({ label }: { label: string }) {
 
 function SummaryCard({ value, label, tone }: { value: number; label: string; tone: string }) {
   return (
-    <div className="card text-center">
+    <div className="card text-center bg-white">
       <div className={`text-4xl font-bold ${tone}`}>{value}</div>
       <div className="mt-2 text-slate-500">{label}</div>
     </div>
@@ -207,9 +208,7 @@ function AuthPanel({
                 key={value}
                 type="button"
                 onClick={() => setMode(value)}
-                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
-                  mode === value ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                }`}
+                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${ mode === value ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700" }`}
               >
                 {value === "login" ? "Log In" : "Create Account"}
               </button>
@@ -288,6 +287,8 @@ export default function TeacherDashboard() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<Id<"teacherClasses"> | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<Id<"students"> | null>(null);
+  const [attendanceLookupOpen, setAttendanceLookupOpen] = useState(false);
+  const [attendanceLookupDate, setAttendanceLookupDate] = useState("");
   const [selectedBlockLabel, setSelectedBlockLabel] = useState("");
   const [rosterFilter, setRosterFilter] = useState<RosterFilter>("all");
   const [rosterSearch, setRosterSearch] = useState("");
@@ -469,6 +470,11 @@ export default function TeacherDashboard() {
   }, [selectedStudentId, teacherStudents]);
 
   useEffect(() => {
+    setAttendanceLookupOpen(false);
+    setAttendanceLookupDate("");
+  }, [selectedStudentId]);
+
+  useEffect(() => {
     if (classDetails?.class) {
       setClassForm({
         name: classDetails.class.name,
@@ -578,6 +584,13 @@ export default function TeacherDashboard() {
   const selectedStudent = useMemo(
     () => teacherStudents.find((student) => student._id.toString() === selectedStudentId?.toString()) ?? null,
     [selectedStudentId, teacherStudents],
+  );
+  const attendanceLookupMatch = useMemo(
+    () =>
+      attendanceLookupDate && studentInsights
+        ? studentInsights.attendanceByDay.find((day) => day.date === attendanceLookupDate) ?? null
+        : null,
+    [attendanceLookupDate, studentInsights],
   );
   const selectedTeacherClass = useMemo(
     () => teacherClasses.find((classDoc) => classDoc._id.toString() === selectedClassId?.toString()) ?? null,
@@ -1245,11 +1258,7 @@ export default function TeacherDashboard() {
               key={section.key}
               type="button"
               onClick={() => setClassWorkspaceSection(section.key)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                classWorkspaceSection === section.key
-                  ? "bg-brand-700 text-white"
-                  : "border border-slate-300 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700"
-              }`}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${ classWorkspaceSection === section.key ? "bg-brand-700 text-white" : "border border-slate-300 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700" }`}
             >
               {section.label}
             </button>
@@ -1363,11 +1372,7 @@ export default function TeacherDashboard() {
           }}
           onDrop={handleRosterDrop}
           onClick={() => rosterFileRef.current?.click()}
-          className={`rounded-2xl border-2 border-dashed px-5 py-6 text-sm outline-none transition-colors ${
-            isRosterDragActive
-              ? "border-brand-500 bg-brand-50 text-brand-800"
-              : "border-slate-300 bg-slate-50 text-slate-500 hover:border-brand-300 hover:bg-brand-50/50"
-          }`}
+          className={`rounded-2xl border-2 border-dashed px-5 py-6 text-sm outline-none transition-colors ${ isRosterDragActive ? "border-brand-500 bg-brand-50 text-brand-800" : "border-slate-300 bg-slate-50 text-slate-500 hover:border-brand-300 hover:bg-brand-50/50" }`}
         >
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
@@ -1496,11 +1501,7 @@ export default function TeacherDashboard() {
 
                   <div className="flex flex-col gap-2 xl:items-end">
                     <span
-                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                        entry.status === "linked"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${ entry.status === "linked" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600" }`}
                     >
                       {entry.status === "linked" ? "Linked" : "Placeholder"}
                     </span>
@@ -1712,11 +1713,7 @@ export default function TeacherDashboard() {
                     <button
                       key={day}
                       onClick={() => setRotationLabel(day)}
-                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                        rotationLabel === day
-                          ? "border-brand-700 bg-brand-700 text-white"
-                          : "border-slate-300 text-slate-600 hover:border-brand-400"
-                      }`}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${ rotationLabel === day ? "border-brand-700 bg-brand-700 text-white" : "border-slate-300 text-slate-600 hover:border-brand-400" }`}
                     >
                       {day}
                     </button>
@@ -1762,11 +1759,7 @@ export default function TeacherDashboard() {
                       dayLabel: todayRotation?.dayLabel,
                     });
                   }}
-                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-sm font-medium transition-all ${
-                    selectedBellType === schedule.type
-                      ? "bg-brand-50 text-brand-800 ring-2 ring-brand-500/20 border-brand-200"
-                      : "border-slate-200 text-slate-600 hover:border-brand-300"
-                  }`}
+                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-2.5 text-left text-sm font-medium transition-all ${ selectedBellType === schedule.type ? "bg-brand-50 text-brand-800 ring-2 ring-brand-500/20 border-brand-200" : "border-slate-200 text-slate-600 hover:border-brand-300" }`}
                 >
                   {schedule.type}
                   {selectedBellType === schedule.type && <div className="h-2 w-2 rounded-full bg-brand-600" />}
@@ -1925,12 +1918,15 @@ export default function TeacherDashboard() {
           </div>
 
           <div className="flex flex-col items-end gap-3">
-            <button
-              onClick={() => navigate("/teacher/settings")}
-              className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-brand-50 transition-colors hover:bg-white/20"
-            >
-              {headerDayLabel ?? "Set Day"}
-            </button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                onClick={() => navigate("/teacher/settings")}
+                className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-brand-50 transition-colors hover:bg-white/20"
+              >
+                {headerDayLabel ?? "Set Day"}
+              </button>
+              <DarkModeToggle variant="inline" />
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => navigate("/")}
@@ -1940,11 +1936,7 @@ export default function TeacherDashboard() {
               </button>
               <button
                 onClick={() => navigate("/teacher/settings")}
-                className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
-                  isSettingsPage
-                    ? "border-white/40 bg-white text-brand-800"
-                    : "border-white/20 bg-white/10 text-white hover:bg-white/20"
-                }`}
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${ isSettingsPage ? "border-white/40 bg-white text-brand-800" : "border-white/20 bg-white/10 text-white hover:bg-white/20" }`}
               >
                 Settings
               </button>
@@ -2010,7 +2002,7 @@ export default function TeacherDashboard() {
               </div>
             )}
 
-            <div className="mt-6 inline-flex rounded-2xl bg-slate-200 p-1">
+            <div className="teacher-tab-nav mt-6 inline-flex rounded-2xl bg-slate-200 p-1">
               {([
                 ["attendance", "Attendance"],
                 ["classes", "Classes"],
@@ -2021,9 +2013,7 @@ export default function TeacherDashboard() {
                 <button
                   key={value}
                   onClick={() => setTab(value)}
-                  className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors ${
-                    tab === value ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                  }`}
+                  className={`teacher-tab-button rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors ${ tab === value ? "teacher-tab-active bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700" }`}
                 >
                   {label}
                 </button>
@@ -2085,11 +2075,7 @@ export default function TeacherDashboard() {
                 </div>
 
                 {sendToOfficeMessage.text && (
-                  <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
-                    sendToOfficeMessage.type === "error" ? "bg-red-50 text-red-700" : 
-                    sendToOfficeMessage.type === "success" ? "bg-emerald-50 text-emerald-700" : 
-                    "bg-blue-50 text-blue-700"
-                  }`}>
+                  <div className={`rounded-xl px-4 py-3 text-sm font-medium ${ sendToOfficeMessage.type === "error" ? "bg-red-50 text-red-700" : sendToOfficeMessage.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700" }`}>
                     {sendToOfficeMessage.text}
                   </div>
                 )}
@@ -2109,11 +2095,7 @@ export default function TeacherDashboard() {
                           <button
                             key={filter}
                             onClick={() => setRosterFilter(filter)}
-                            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                              rosterFilter === filter
-                                ? "bg-brand-700 text-white"
-                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                            }`}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${ rosterFilter === filter ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200" }`}
                           >
                             {filter === "all"
                               ? "All"
@@ -2288,11 +2270,7 @@ export default function TeacherDashboard() {
                     <button
                       key={classDoc._id.toString()}
                       onClick={() => openClassWorkspace(classDoc._id)}
-                      className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
-                        selectedClassId?.toString() === classDoc._id.toString() && classesViewMode === "editing"
-                          ? "border-brand-300 bg-brand-50"
-                          : "border-slate-200 bg-white hover:border-brand-200"
-                      }`}
+                      className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${ selectedClassId?.toString() === classDoc._id.toString() && classesViewMode === "editing" ? "class-card-selected border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-200" }`}
                     >
                       <div className="font-semibold text-slate-900">{classDoc.name}</div>
                       <div className="mt-1 text-sm text-slate-500">
@@ -2413,11 +2391,7 @@ export default function TeacherDashboard() {
                         setDeleteConfirmation("");
                         setDeleteError("");
                       }}
-                      className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors ${
-                        selectedStudentId?.toString() === student._id.toString()
-                          ? "border-brand-300 bg-brand-50"
-                          : "border-slate-200 bg-white hover:border-brand-200"
-                      }`}
+                      className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors ${ selectedStudentId?.toString() === student._id.toString() ? "student-card-selected border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-200" }`}
                     >
                       <div className="font-semibold text-slate-900">{student.name}</div>
                       <div className="mt-1 text-sm text-slate-500">
@@ -2593,7 +2567,61 @@ export default function TeacherDashboard() {
                   <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr),minmax(320px,0.75fr)]">
                     <div className="space-y-6">
                       <div className="card space-y-4">
-                        <h3 className="text-lg font-semibold text-slate-900">Attendance by Day</h3>
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <h3 className="text-lg font-semibold text-slate-900">Attendance by Day</h3>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextOpen = !attendanceLookupOpen;
+                                setAttendanceLookupOpen(nextOpen);
+                                if (nextOpen && !attendanceLookupDate) {
+                                  const defaultDate = todayStr();
+                                  setAttendanceLookupDate(defaultDate);
+                                }
+                              }}
+                              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+                            >
+                              Find Specific Date
+                            </button>
+                            {attendanceLookupOpen && (
+                              <div className="mt-3 w-full min-w-[280px] rounded-2xl border border-slate-200 bg-white p-4 shadow-lg md:absolute md:right-0 md:top-full md:z-20">
+                                <div className="text-sm font-semibold text-slate-900">Search This Student's Day</div>
+                                <p className="mt-1 text-xs text-slate-500">Pick a date from the calendar to check this student's attendance for that day.</p>
+                                <div className="mt-4 space-y-3">
+                                  <input
+                                    type="date"
+                                    value={attendanceLookupDate}
+                                    onChange={(event) => {
+                                      const nextDate = event.target.value;
+                                      setAttendanceLookupDate(nextDate);
+                                    }}
+                                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                  />
+                                </div>
+                                <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3">
+                                  {attendanceLookupMatch ? (
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="text-sm font-semibold text-slate-900">{fmtDateLabel(attendanceLookupMatch.date)}</div>
+                                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(attendanceLookupMatch.status)}`}>
+                                          {statusLabel(attendanceLookupMatch.status)}
+                                        </span>
+                                      </div>
+                                      {attendanceLookupMatch.activityLabel && (
+                                        <div className="text-sm text-slate-500">{attendanceLookupMatch.activityLabel}</div>
+                                      )}
+                                    </div>
+                                  ) : attendanceLookupDate ? (
+                                    <p className="text-sm text-slate-500">No attendance record was found for that date.</p>
+                                  ) : (
+                                    <p className="text-sm text-slate-500">Choose a date to see whether this student was present or absent.</p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div className="space-y-3">
                           {studentInsights.attendanceByDay.map((day) => (
                             <div key={day.date} className="rounded-2xl border border-slate-200 px-4 py-4">
@@ -2682,15 +2710,15 @@ export default function TeacherDashboard() {
               </div>
               <div className="space-y-2">
                 {roomEntries.map((entry) => (
-                  <button
-                    key={`${entry.room}-${entry.className}`}
-                    onClick={() => openRoomForm(entry.room)}
-                    className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors ${
-                      editingRoom === entry.room
-                        ? "border-brand-300 bg-brand-50"
-                        : "border-slate-200 bg-white hover:border-brand-200"
-                    }`}
-                  >
+	                  <button
+	                    key={`${entry.room}-${entry.className}`}
+	                    onClick={() => openRoomForm(entry.room)}
+	                    className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors ${
+                        editingRoom === entry.room
+                          ? "room-card-selected border-brand-300 bg-brand-50"
+                          : "border-slate-200 bg-white hover:border-brand-200"
+                      }`}
+	                  >
                     <div className="font-semibold text-slate-900">Room {entry.room}</div>
                     <div className="mt-1 text-sm text-slate-500">{entry.className} · {entry.subject}</div>
                   </button>
@@ -2738,13 +2766,7 @@ export default function TeacherDashboard() {
 	                  </div>
 	                  {beaconScanMessage && (
 	                    <div
-	                      className={`rounded-xl px-4 py-3 text-sm ${
-	                        beaconScanState === "error"
-	                          ? "bg-red-50 text-red-700"
-	                          : beaconScanState === "connected"
-	                            ? "bg-emerald-50 text-emerald-700"
-	                            : "bg-slate-100 text-slate-600"
-	                      }`}
+	                      className={`rounded-xl px-4 py-3 text-sm ${ beaconScanState === "error" ? "bg-red-50 text-red-700" : beaconScanState === "connected" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600" }`}
 	                    >
 	                      {beaconScanMessage}
 	                    </div>
