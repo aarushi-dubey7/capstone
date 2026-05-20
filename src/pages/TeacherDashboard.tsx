@@ -130,12 +130,20 @@ function monthGridDays(date: string) {
   const base = new Date(`${date}T00:00:00`);
   const start = new Date(base);
   start.setDate(1);
-  start.setDate(start.getDate() - start.getDay());
+  while (start.getDay() === 0 || start.getDay() === 6) {
+    start.setDate(start.getDate() - 1);
+  }
+  while (start.getDay() !== 1) {
+    start.setDate(start.getDate() - 1);
+  }
   const days: string[] = [];
-  for (let index = 0; index < 42; index += 1) {
-    const next = new Date(start);
-    next.setDate(start.getDate() + index);
-    days.push(todayStr(next));
+  let cursor = new Date(start);
+  while (days.length < 30) {
+    const dayOfWeek = cursor.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      days.push(todayStr(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
   }
   return days;
 }
@@ -297,6 +305,7 @@ export default function TeacherDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const rosterFileRef = useRef<HTMLInputElement>(null);
+  const classWorkspaceResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const [teacherId, setTeacherId] = useState<Id<"teachers"> | null>(() => {
     const stored = getStoredTeacherId();
     return stored ? (stored as Id<"teachers">) : null;
@@ -350,6 +359,8 @@ export default function TeacherDashboard() {
   const [classStatsDate, setClassStatsDate] = useState(todayStr());
   const [classStatsCalendarView, setClassStatsCalendarView] = useState(false);
   const [classStatsBulkFilter, setClassStatsBulkFilter] = useState<ClassStatsBulkFilter | null>(null);
+  const [classWorkspaceWidth, setClassWorkspaceWidth] = useState(980);
+  const [isResizingClassWorkspace, setIsResizingClassWorkspace] = useState(false);
   const [recentlyCreatedClassName, setRecentlyCreatedClassName] = useState("");
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   const [createClassError, setCreateClassError] = useState("");
@@ -488,6 +499,30 @@ export default function TeacherDashboard() {
       setTeacherId(null);
     }
   }, [teacherId, teacherProfile]);
+
+  useEffect(() => {
+    if (!isResizingClassWorkspace) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!classWorkspaceResizeRef.current) return;
+      const nextWidth =
+        classWorkspaceResizeRef.current.startWidth +
+        (classWorkspaceResizeRef.current.startX - event.clientX);
+      setClassWorkspaceWidth(Math.min(Math.max(nextWidth, 760), 1600));
+    };
+
+    const handleMouseUp = () => {
+      classWorkspaceResizeRef.current = null;
+      setIsResizingClassWorkspace(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingClassWorkspace]);
 
   useEffect(() => {
     if (selectedClassId && !teacherClasses.some((classDoc) => classDoc._id.toString() === selectedClassId.toString())) {
@@ -893,6 +928,14 @@ export default function TeacherDashboard() {
     setClassStatsDate(todayStr());
     setClassStatsCalendarView(false);
     setClassStatsBulkFilter(null);
+  }
+
+  function beginClassWorkspaceResize(event: React.MouseEvent<HTMLButtonElement>) {
+    classWorkspaceResizeRef.current = {
+      startX: event.clientX,
+      startWidth: classWorkspaceWidth,
+    };
+    setIsResizingClassWorkspace(true);
   }
 
   async function handleCreateClass() {
@@ -1802,8 +1845,8 @@ export default function TeacherDashboard() {
           </div>
         )}
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr),minmax(360px,0.85fr)]">
-          <div className="card space-y-4">
+        <div className="mx-auto grid w-full max-w-[1320px] gap-6 xl:grid-cols-[minmax(620px,760px),minmax(420px,520px)] xl:justify-center">
+          <div className={`card space-y-4 ${classStatsCalendarView ? "class-stats-resizable-card" : ""}`}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
@@ -1815,16 +1858,21 @@ export default function TeacherDashboard() {
                     : "Each row shows totals for this class only."}
                 </p>
               </div>
+              {classStatsCalendarView && (
+                <div className="class-stats-resize-hint rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Hover to resize
+                </div>
+              )}
             </div>
 
             {classStatsCalendarView ? (
               <div className="space-y-3">
-                <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                <div className="grid grid-cols-5 gap-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  {["Mon", "Tue", "Wed", "Thu", "Fri"].map((day) => (
                     <div key={day}>{day}</div>
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-2">
+                <div className="grid grid-cols-5 gap-2">
                   {calendarDays.map((date) => {
                     const entry = calendarEntries.get(date) ?? null;
                     const isActiveMonth = date.slice(0, 7) === activeMonthKey;
@@ -1891,7 +1939,7 @@ export default function TeacherDashboard() {
             )}
           </div>
 
-          <div className="card space-y-4">
+          <div className="card min-w-[420px] space-y-4">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">Specific Date</h3>
               <p className="mt-1 text-sm text-slate-500">
@@ -2657,8 +2705,8 @@ export default function TeacherDashboard() {
         )}
 
         {tab === "classes" && (
-          <div className="mt-6 grid gap-6 xl:grid-cols-[280px,minmax(0,1fr)]">
-            <div className="space-y-6">
+          <div className="mt-6 flex items-start gap-6 overflow-x-auto pb-2">
+            <div className="w-[280px] shrink-0 space-y-6">
               <div className="card space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-slate-900">Your Classes</h2>
@@ -2687,7 +2735,16 @@ export default function TeacherDashboard() {
               </div>
             </div>
 
-            <div className="space-y-6">
+            <div
+              className={`relative shrink-0 space-y-6 ${isResizingClassWorkspace ? "select-none" : ""}`}
+              style={{ width: classWorkspaceWidth }}
+            >
+              <button
+                type="button"
+                onMouseDown={beginClassWorkspaceResize}
+                className={`class-workspace-resize-handle ${isResizingClassWorkspace ? "is-active" : ""}`}
+                aria-label="Resize class workspace"
+              />
               {classesViewMode === "landing" && (
                 <>
                   <div className="flex justify-end">
