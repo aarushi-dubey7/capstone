@@ -117,6 +117,26 @@ function fmt(ts: number) {
   return new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
+type StudentPublicFields = {
+  name: string;
+  grade?: string | null;
+  email?: string | null;
+};
+
+function studentPickerLabel(student: StudentPublicFields) {
+  const parts = [student.name];
+  if (student.grade) parts.push(`Grade ${student.grade}`);
+  if (student.email) parts.push(student.email);
+  return parts.join(" · ");
+}
+
+function studentPublicSubtitle(student: StudentPublicFields) {
+  const parts: string[] = [];
+  if (student.grade) parts.push(`Grade ${student.grade}`);
+  if (student.email) parts.push(student.email);
+  return parts.join(" · ") || "No grade or email on file";
+}
+
 function fmtDateLabel(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
     weekday: "short",
@@ -435,6 +455,12 @@ export default function TeacherDashboard() {
   const [rosterNameDrafts, setRosterNameDrafts] = useState<Record<string, string>>({});
   const [editingRosterEntryIds, setEditingRosterEntryIds] = useState<Record<string, boolean>>({});
   const [savingRosterEntryId, setSavingRosterEntryId] = useState<string | null>(null);
+  // const [showStudentPassword, setShowStudentPassword] = useState(false);
+  // const [newStudentPassword, setNewStudentPassword] = useState("");
+  // const [confirmStudentPassword, setConfirmStudentPassword] = useState("");
+  // const [passwordChangeError, setPasswordChangeError] = useState("");
+  // const [passwordChangeSuccess, setPasswordChangeSuccess] = useState("");
+  // const [isUpdatingStudentPassword, setIsUpdatingStudentPassword] = useState(false);
   const [rosterParseError, setRosterParseError] = useState("");
   const [isParsingRoster, setIsParsingRoster] = useState(false);
   const [isRosterDragActive, setIsRosterDragActive] = useState(false);
@@ -529,6 +555,7 @@ export default function TeacherDashboard() {
   const markAllNotificationsRead = useMutation(api.notifications.markAllAsRead);
   const createTestNotification = useMutation(api.notifications.createTestNotification);
   const removeStudent = useMutation(api.students.remove);
+  // const updateStudentPasswordByTeacher = useMutation(api.students.updatePasswordByTeacher);
   const parseRosterImage = useAction(api.groq.parseRosterImage);
   const initBellSchedules = useMutation(api.bellSchedules.initialize);
   const setRotation = useMutation(api.scheduleRotation.set);
@@ -613,6 +640,11 @@ export default function TeacherDashboard() {
   useEffect(() => {
     setAttendanceLookupOpen(false);
     setAttendanceLookupDate("");
+    // setShowStudentPassword(false);
+    // setNewStudentPassword("");
+    // setConfirmStudentPassword("");
+    // setPasswordChangeError("");
+    // setPasswordChangeSuccess("");
   }, [selectedStudentId]);
 
   useEffect(() => {
@@ -738,7 +770,7 @@ export default function TeacherDashboard() {
   const manualLinkedStudentLabelById = useMemo(
     () =>
       Object.fromEntries(
-        allStudentOptions.map((student) => [student._id.toString(), `${student.name} · ${student.studentId}`]),
+        allStudentOptions.map((student) => [student._id.toString(), studentPickerLabel(student)]),
       ) as Record<string, string>,
     [allStudentOptions],
   );
@@ -1262,6 +1294,51 @@ export default function TeacherDashboard() {
     });
     setRosterNameDrafts((current) => ({ ...current, [entryId]: displayName }));
   }
+
+  // async function handleUpdateStudentPassword() {
+  //   if (!authenticatedTeacherId || !selectedStudentId || !selectedStudent) return;
+  // 
+  //   const trimmed = newStudentPassword.trim();
+  //   const confirmed = confirmStudentPassword.trim();
+  //   setPasswordChangeError("");
+  //   setPasswordChangeSuccess("");
+  // 
+  //   if (!trimmed) {
+  //     setPasswordChangeError("Enter a new password.");
+  //     return;
+  //   }
+  //   if (trimmed.length > MAX_STUDENT_PASSWORD_LENGTH) {
+  //     setPasswordChangeError(`Password must be ${MAX_STUDENT_PASSWORD_LENGTH} characters or fewer.`);
+  //     return;
+  //   }
+  //   if (trimmed !== confirmed) {
+  //     setPasswordChangeError("New password and confirmation do not match.");
+  //     return;
+  //   }
+  //   if (trimmed === selectedStudent.studentId) {
+  //     setPasswordChangeError("That is already this student's password.");
+  //     return;
+  //   }
+  // 
+  //   setIsUpdatingStudentPassword(true);
+  //   try {
+  //     await updateStudentPasswordByTeacher({
+  //       teacherId: authenticatedTeacherId,
+  //       studentId: selectedStudentId,
+  //       newPassword: trimmed,
+  //     });
+  //     setNewStudentPassword("");
+  //     setConfirmStudentPassword("");
+  //     setShowStudentPassword(false);
+  //     setPasswordChangeSuccess(
+  //       `${selectedStudent.name} was notified in the student portal. Check your notifications for confirmation.`,
+  //     );
+  //   } catch (error) {
+  //     setPasswordChangeError(error instanceof Error ? error.message : "Could not update password.");
+  //   } finally {
+  //     setIsUpdatingStudentPassword(false);
+  //   }
+  // }
 
   async function handleSaveRosterEntryDisplayName(
     rosterEntryId: Id<"classRosterEntries">,
@@ -2093,7 +2170,7 @@ export default function TeacherDashboard() {
                     )}
                     <div className="text-sm text-slate-500 dark:text-slate-400">
                       {entry.linkedStudent
-                        ? `${entry.linkedStudent.name} · ${entry.linkedStudent.studentId}`
+                        ? `Linked account: ${studentPickerLabel(entry.linkedStudent)}`
                         : "Placeholder entry"}
                       {entry.source ? ` · ${entry.source}` : ""}
                     </div>
@@ -2378,10 +2455,9 @@ export default function TeacherDashboard() {
                           {fmtDateLabel(entry.date)} · {entry.dayLabel}
                           {entry.student.grade ? ` · Grade ${entry.student.grade}` : ""}
                         </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          ID: {entry.student.studentNumber}
-                          {entry.student.activityLabel ? ` · ${entry.student.activityLabel}` : ""}
-                        </div>
+                        {entry.student.activityLabel && (
+                          <div className="mt-1 text-xs text-slate-400">{entry.student.activityLabel}</div>
+                        )}
                       </div>
                       <div className="flex flex-col items-start gap-2 lg:items-end">
                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(entry.student.status)}`}>
@@ -2515,8 +2591,7 @@ export default function TeacherDashboard() {
                         <div>
                           <div className="font-semibold text-slate-900">{student.name}</div>
                           <div className="mt-1 text-sm text-slate-500">
-                            ID: {student.studentNumber}
-                            {student.grade ? ` · Grade ${student.grade}` : ""}
+                            {studentPublicSubtitle(student)}
                           </div>
                           {student.activityLabel && (
                             <div className="mt-1 text-xs text-slate-400">{student.activityLabel}</div>
@@ -3048,33 +3123,92 @@ export default function TeacherDashboard() {
                         .filter((c) => c.name.toLowerCase().includes(term) || (c.subject?.toLowerCase().includes(term) ?? false) || c.room.toLowerCase().includes(term))
                         .slice(0, 3)
                     : [];
+
+                  const classSubPageKeywords: Record<ClassWorkspaceSection, string[]> = {
+                    stats: ["graph", "trends", "report", "percentage", "rate", "analysis", "analytics", "charts", "average", "summary", "stats", "insights"],
+                    details: ["edit class", "delete class", "rename", "subject", "room", "block", "rotation", "details", "info"],
+                    rosterUpload: ["import", "upload", "groq", "parse", "parse roster", "csv", "text", "file", "drag", "image", "roster"],
+                    manualAdd: ["add student", "link student", "create placeholder", "insert", "new student", "manual add"],
+                    roster: ["student list", "edit names", "link account", "placeholders", "roster", "manage list"],
+                    planner: ["schedule", "block", "rotation", "time slot", "period", "calendar", "bell", "day planner"],
+                  };
+
+                  const matchingClassSubPages: Array<{
+                    classId: string;
+                    className: string;
+                    label: string;
+                    section: ClassWorkspaceSection;
+                  }> = [];
+
+                  if (term) {
+                    for (const c of teacherClasses) {
+                      for (const section of CLASS_WORKSPACE_SECTIONS) {
+                        const keywords = classSubPageKeywords[section.key] ?? [];
+                        
+                        const optionText1 = `${c.name} ${section.label}`.toLowerCase();
+                        const optionText2 = `${section.label} ${c.name}`.toLowerCase();
+                        const optionText3 = section.label.toLowerCase();
+                        
+                        const keywordMatch = keywords.some(
+                          (kw) => kw.includes(term) || term.includes(kw)
+                        );
+                        
+                        const classNameMatch = c.name.toLowerCase().includes(term);
+                        
+                        if (
+                          optionText1.includes(term) ||
+                          optionText2.includes(term) ||
+                          (term.length >= 3 && optionText3.includes(term)) ||
+                          keywordMatch ||
+                          (classNameMatch && term.length >= 3)
+                        ) {
+                          if (!matchingClassSubPages.some(item => item.classId === c._id.toString() && item.section === section.key)) {
+                            matchingClassSubPages.push({
+                              classId: c._id.toString(),
+                              className: c.name,
+                              label: section.label,
+                              section: section.key,
+                            });
+                          }
+                        }
+                      }
+                    }
+                  }
+
                   const matchingRooms = term
                     ? allLocations
                         .filter((l) => l.roomNumber.toLowerCase().includes(term) || l.name.toLowerCase().includes(term))
                         .slice(0, 3)
                     : [];
+
                   const navItems = [
-                    { label: "Attendance", tab: "attendance" },
-                    { label: "Classes", tab: "classes" },
-                    { label: "Students", tab: "schedules" },
-                    { label: "Rooms", tab: "rooms" },
-                    { label: "Movement", tab: "movement" },
-                    { label: "Settings", route: "/teacher/settings" },
+                    { label: "Attendance", tab: "attendance", keywords: ["check-in", "present", "absent", "tardy", "late", "status", "roster", "mark", "here", "check", "today"] },
+                    { label: "Classes", tab: "classes", keywords: ["course", "period", "subject", "room", "roster", "add class"] },
+                    { label: "Students", tab: "schedules", keywords: ["student details", "profile", "insights", "history", "attendance history", "lookup", "grades", "name", "id", "search student"] },
+                    { label: "Rooms", tab: "rooms", keywords: ["beacon", "bluetooth", "location", "scanner", "ble", "room number"] },
+                    { label: "Movement", tab: "movement", keywords: ["live", "log", "location log", "tracking", "hallway", "walk", "realtime", "where"] },
+                    { label: "Settings", route: "/teacher/settings", keywords: ["tardy threshold", "threshold", "reminder", "notification", "enable reminder", "times", "preferences", "config"] },
                   ];
+
                   const matchingNav = term
-                    ? navItems.filter((item) => item.label.toLowerCase().includes(term)).slice(0, 3)
+                    ? navItems.filter((item) => {
+                        const nameMatch = item.label.toLowerCase().includes(term);
+                        const keywordMatch = item.keywords.some((kw) => kw.includes(term) || term.includes(kw));
+                        return nameMatch || keywordMatch;
+                      }).slice(0, 3)
                     : [];
 
-                  if (matchingStudents.length === 0 && matchingClasses.length === 0 && matchingRooms.length === 0 && matchingNav.length === 0) {
+                  if (matchingStudents.length === 0 && matchingClasses.length === 0 && matchingClassSubPages.length === 0 && matchingRooms.length === 0 && matchingNav.length === 0) {
                     return <div className="px-3 py-2 text-sm text-slate-400 dark:text-slate-500">No results found.</div>;
                   }
 
                   const handleSearchSelect = (item: {
-                    type: "student" | "class" | "room" | "nav";
+                    type: "student" | "class" | "room" | "nav" | "classSub";
                     id?: string;
                     name?: string;
                     tab?: string;
                     route?: string;
+                    section?: ClassWorkspaceSection;
                   }) => {
                     setHeaderSearchQuery("");
                     
@@ -3088,6 +3222,10 @@ export default function TeacherDashboard() {
                     } else if (item.type === "class" && item.id) {
                       setTab("classes");
                       openClassWorkspace(item.id as Id<"teacherClasses">);
+                    } else if (item.type === "classSub" && item.id && item.section) {
+                      setTab("classes");
+                      openClassWorkspace(item.id as Id<"teacherClasses">);
+                      setClassWorkspaceSection(item.section);
                     } else if (item.type === "room" && item.name) {
                       setTab("rooms");
                       openRoomForm(item.name);
@@ -3147,6 +3285,30 @@ export default function TeacherDashboard() {
                         </div>
                       )}
 
+                      {matchingClassSubPages.length > 0 && (
+                        <div>
+                          <div className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">
+                            Class Sections
+                          </div>
+                          <div className="space-y-0.5">
+                            {matchingClassSubPages.slice(0, 4).map((item) => (
+                              <button
+                                key={`${item.classId}-${item.section}`}
+                                type="button"
+                                onClick={() => handleSearchSelect({ type: "classSub", id: item.classId, section: item.section })}
+                                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{item.label}</span>
+                                  <span className="text-xs text-slate-400">{item.className}</span>
+                                </div>
+                                <span className="text-xs text-slate-400">Go to section</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {matchingStudents.length > 0 && (
                         <div>
                           <div className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">
@@ -3162,7 +3324,7 @@ export default function TeacherDashboard() {
                               >
                                 <div className="flex flex-col">
                                   <span className="font-medium">{s.name}</span>
-                                  <span className="text-xs text-slate-400">ID: {s.studentId} · Grade {s.grade ?? "—"}</span>
+                                  <span className="text-xs text-slate-400">{studentPublicSubtitle(s)}</span>
                                 </div>
                                 <span className="text-xs text-slate-400">View profile</span>
                               </button>
@@ -3371,7 +3533,7 @@ export default function TeacherDashboard() {
                         type="text"
                         value={rosterSearch}
                         onChange={(event) => setRosterSearch(event.target.value)}
-                        placeholder="Search roster by name, ID, email, grade, or room"
+                        placeholder="Search roster by name, email, grade, or room"
                         className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                       />
                       <div className="flex flex-wrap gap-2">
@@ -3414,8 +3576,7 @@ export default function TeacherDashboard() {
                               <div>
                                 <div className="font-semibold text-slate-900">{row.name}</div>
                                 <div className="mt-1 text-sm text-slate-500">
-                                  ID: {row.studentNumber}
-                                  {row.grade ? ` · Grade ${row.grade}` : ""}
+                                  {studentPublicSubtitle({ name: row.name, grade: row.grade, email: row.email })}
                                 </div>
                                 <div className="mt-1 text-xs text-slate-400">
                                   {row.email ?? "No email"}
@@ -3681,7 +3842,7 @@ export default function TeacherDashboard() {
                   type="text"
                   value={studentSearch}
                   onChange={(event) => setStudentSearch(event.target.value)}
-                  placeholder="Search by name, ID, email, or grade"
+                  placeholder="Search by name, email, or grade"
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
                 <div className="space-y-3">
@@ -3696,11 +3857,7 @@ export default function TeacherDashboard() {
                       className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors ${ selectedStudentId?.toString() === student._id.toString() ? "student-card-selected border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-200" }`}
                     >
                       <div className="font-semibold text-slate-900">{student.name}</div>
-                      <div className="mt-1 text-sm text-slate-500">
-                        ID: {student.studentId}
-                        {student.grade ? ` · Grade ${student.grade}` : ""}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-400">{student.email ?? "No email on file"}</div>
+                      <div className="mt-1 text-sm text-slate-500">{studentPublicSubtitle(student)}</div>
                     </button>
                   ))}
                   {linkedScheduleStudents.length === 0 && (
@@ -3720,8 +3877,8 @@ export default function TeacherDashboard() {
                       <div>
                         <h2 className="text-2xl font-bold text-slate-900">{selectedStudent.name}</h2>
                         <p className="mt-1 text-sm text-slate-500">
-                          ID: {selectedStudent.studentId}
-                          {selectedStudent.grade ? ` · Grade ${selectedStudent.grade}` : ""}
+                          {selectedStudent.grade ? `Grade ${selectedStudent.grade}` : "No grade on file"}
+                          {selectedStudent.email ? ` · ${selectedStudent.email}` : ""}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {selectedStudent.linkedClasses.map((entry) => (
@@ -3741,6 +3898,81 @@ export default function TeacherDashboard() {
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="card space-y-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Login Password</h3>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Students sign in with their school email and this password. Changing it notifies the student in
+                        their portal.
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-600 dark:bg-slate-950/60">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Current password</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <span className="font-mono text-base font-semibold text-slate-900 dark:text-slate-100">
+                          {showStudentPassword ? selectedStudent.studentId : "•••••••"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowStudentPassword((current) => !current)}
+                          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-slate-600 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
+                        >
+                          {showStudentPassword ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          New password
+                        </label>
+                        <input
+                          type="text"
+                          value={newStudentPassword}
+                          onChange={(event) => setNewStudentPassword(event.target.value)}
+                          maxLength={MAX_STUDENT_PASSWORD_LENGTH}
+                          placeholder="Up to 7 characters"
+                          className={teacherFieldInputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Confirm new password
+                        </label>
+                        <input
+                          type="text"
+                          value={confirmStudentPassword}
+                          onChange={(event) => setConfirmStudentPassword(event.target.value)}
+                          maxLength={MAX_STUDENT_PASSWORD_LENGTH}
+                          placeholder="Re-enter password"
+                          className={teacherFieldInputClass}
+                        />
+                      </div>
+                    </div>
+
+                    {passwordChangeError && (
+                      <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-950/30 dark:text-red-400">
+                        {passwordChangeError}
+                      </div>
+                    )}
+                    {passwordChangeSuccess && (
+                      <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
+                        {passwordChangeSuccess}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => void handleUpdateStudentPassword()}
+                      disabled={isUpdatingStudentPassword || !newStudentPassword.trim() || !confirmStudentPassword.trim()}
+                      className="btn-primary w-full max-w-xs disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isUpdatingStudentPassword ? "Saving password..." : "Save new password"}
+                    </button>
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-4">

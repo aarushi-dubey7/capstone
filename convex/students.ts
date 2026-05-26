@@ -1,7 +1,29 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 
 const MAX_STUDENT_ID_LENGTH = 7;
+
+async function assertTeacherManagesStudent(
+  ctx: MutationCtx,
+  teacherId: Id<"teachers">,
+  studentId: Id<"students">,
+) {
+  const classes = await ctx.db
+    .query("teacherClasses")
+    .withIndex("by_teacherId", (q) => q.eq("teacherId", teacherId))
+    .collect();
+  const classIds = new Set(classes.map((classDoc) => classDoc._id.toString()));
+  const rosterEntries = await ctx.db.query("classRosterEntries").collect();
+  const isLinked = rosterEntries.some(
+    (entry) =>
+      entry.linkedStudentId?.toString() === studentId.toString() &&
+      classIds.has(entry.classId.toString()),
+  );
+  if (!isLinked) {
+    throw new Error("You can only manage students linked to your class rosters.");
+  }
+}
 
 function localDateString(date = new Date()) {
   const year = date.getFullYear();
@@ -236,6 +258,68 @@ export const getInsights = query({
           return (a.block ?? "").localeCompare(b.block ?? "");
         }),
     };
+  },
+});
+
+export const updatePasswordByTeacher = mutation({
+  args: {
+    teacherId: v.id("teachers"),
+    studentId: v.id("students"),
+    newPassword: v.string(),
+  },
+  handler: async (ctx, { teacherId, studentId, newPassword }) => {
+    const teacher = await ctx.db.get(teacherId);
+    if (!teacher) throw new Error("Teacher not found.");
+
+    const student = await ctx.db.get(studentId);
+    if (!student) throw new Error("Student not found.");
+
+    await assertTeacherManagesStudent(ctx, teacherId, studentId);
+
+    const normalizedPassword = normalizeStudentId(newPassword);
+    if (!normalizedPassword) {
+      throw new Error("Password is required.");
+    }
+    assertStudentIdLength(normalizedPassword);
+
+    if (normalizedPassword === student.studentId) {
+      throw new Error("That is already this student's password.");
+    }
+
+    const taken = await ctx.db
+      .query("students")
+      .withIndex("by_studentId", (q) => q.eq("studentId", normalizedPassword))
+      .first();
+    if (taken && taken._id !== studentId) {
+      throw new Error("That password is already used by another student.");
+    }
+
+    await ctx.db.patch(studentId, { studentId: normalizedPassword });
+
+    const date = localDateString();
+    const studentMessage = `Your teacher (${teacher.name}) updated your login password. Your new password is "${normalizedPassword}". Use it with your school email the next time you sign in.`;
+
+    await ctx.db.insert("studentNotifications", {
+      studentId,
+      teacherId,
+      message: studentMessage,
+      type: "password_changed",
+      read: false,
+      createdAt: Date.now(),
+    });
+
+    await ctx.db.insert("notifications", {
+      teacherId,
+      studentId,
+      date,
+      message: `Password updated for ${student.name}. They were notified in the student portal to use their new password.`,
+      type: "password_reset",
+      dedupeKey: `password_reset:${studentId.toString()}:${Date.now()}`,
+      read: false,
+      createdAt: Date.now(),
+    });
+
+    return { studentId, newPassword: normalizedPassword };
   },
 });
 

@@ -168,13 +168,26 @@ export default defineSchema({
     studentId: v.optional(v.id("students")),
     date: v.string(),
     message: v.string(),
-    type: v.union(v.literal("activity_recommendation"), v.literal("general")),
+    type: v.union(
+      v.literal("activity_recommendation"),
+      v.literal("password_reset"),
+      v.literal("general"),
+    ),
     dedupeKey: v.optional(v.string()),
     read: v.boolean(),
     createdAt: v.number(),
   })
     .index("by_teacher", ["teacherId", "read"])
     .index("by_teacher_date", ["teacherId", "date"]),
+
+  studentNotifications: defineTable({
+    studentId: v.id("students"),
+    teacherId: v.optional(v.id("teachers")),
+    message: v.string(),
+    type: v.union(v.literal("password_changed"), v.literal("general")),
+    read: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_student_and_read", ["studentId", "read"]),
 
   mainOfficeEmails: defineTable({
     email: v.string(),
