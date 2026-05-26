@@ -38,7 +38,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "tab-nav",
     title: "Main sections",
-    body: "Use Attendance, Classes, Students, Rooms, and Movement to manage your day.",
+    body: "• Attendance: Take class attendance, mark statuses, and manage office alerts.\n• Classes: Add new classes, upload/edit rosters, and schedule blocks.\n• Students: Check student profiles, individual logs, and stats.\n• Rooms: Monitor rooms, check-in activity, and beacon signals.\n• Movement: View real-time student logs and flow across the building.",
     target: "tab-nav",
     advanceOn: "next",
   },

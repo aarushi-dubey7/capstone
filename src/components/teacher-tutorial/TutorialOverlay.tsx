@@ -163,7 +163,7 @@ export default function TutorialOverlay({
           Step {stepIndex + 1} of {stepCount}
         </div>
         <h3 className="mt-2 text-lg font-bold text-slate-900">{step.title}</h3>
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">{step.body}</p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600 whitespace-pre-line">{step.body}</p>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           {showNext && (
