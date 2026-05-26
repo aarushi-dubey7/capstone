@@ -25,7 +25,6 @@ export default function StudentPortal() {
 
   const [state, setState] = useState<CheckState>("idle");
   const [message, setMessage] = useState("");
-  const [countdown, setCountdown] = useState<number | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
 
@@ -48,14 +47,6 @@ export default function StudentPortal() {
   useEffect(() => {
     if (!storedId) navigate("/onboarding");
   }, [storedId, navigate]);
-
-  // Auto-close after successful check-in
-  useEffect(() => {
-    if (countdown === null) return;
-    if (countdown <= 0) { window.close(); navigate("/"); return; }
-    const t = setTimeout(() => setCountdown((c) => (c ?? 1) - 1), 1000);
-    return () => clearTimeout(t);
-  }, [countdown, navigate]);
 
   async function handleCheckIn() {
     if (!student || !locations) return;
@@ -124,7 +115,6 @@ export default function StudentPortal() {
           ? `Checked in to ${locationName} — marked late`
           : `Checked in to ${locationName}`
       );
-      setCountdown(4);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("cancelled") || msg.includes("chosen")) {
@@ -216,14 +206,24 @@ export default function StudentPortal() {
         )}
 
         {state === "success" && (
-          <div className="w-full py-8 rounded-3xl bg-white/20 backdrop-blur flex flex-col items-center gap-3">
-            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
-            <p className="text-white text-lg font-semibold">{message}</p>
-            {countdown !== null && (
-              <p className="text-white/60 text-sm">Closing in {countdown}…</p>
-            )}
+          <div className="w-full space-y-3 rounded-3xl bg-white/20 px-4 py-8 backdrop-blur">
+            <div className="flex flex-col items-center gap-3">
+              <svg className="h-12 w-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+              <p className="text-lg font-semibold text-white">{message}</p>
+              <p className="text-sm text-white/70">You can leave this tab open or check in again later.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setState("idle");
+                setMessage("");
+              }}
+              className="w-full rounded-2xl bg-white py-4 text-lg font-bold text-brand-800 shadow-lg transition-all hover:shadow-white/20 active:scale-95"
+            >
+              Check in again
+            </button>
           </div>
         )}
 
