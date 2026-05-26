@@ -403,6 +403,7 @@ export default function TeacherDashboard() {
   const [manualLinkedStudentId, setManualLinkedStudentId] = useState("");
   const [manualLinkedStudentQuery, setManualLinkedStudentQuery] = useState("");
   const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
+  const [rosterLinkQueries, setRosterLinkQueries] = useState<Record<string, string>>({});
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [rosterPreviewImage, setRosterPreviewImage] = useState<string | null>(null);
@@ -410,6 +411,7 @@ export default function TeacherDashboard() {
   const [rosterTextInput, setRosterTextInput] = useState("");
   const [parsedRosterNames, setParsedRosterNames] = useState<string[]>([]);
   const [rosterSelections, setRosterSelections] = useState<Record<string, string>>({});
+  const [rosterNameDrafts, setRosterNameDrafts] = useState<Record<string, string>>({});
   const [rosterParseError, setRosterParseError] = useState("");
   const [isParsingRoster, setIsParsingRoster] = useState(false);
   const [isRosterDragActive, setIsRosterDragActive] = useState(false);
@@ -486,6 +488,7 @@ export default function TeacherDashboard() {
   const addManualRosterEntry = useMutation(api.teacherClasses.addManualRosterEntry);
   const linkRosterEntry = useMutation(api.teacherClasses.linkRosterEntry);
   const removeRosterEntry = useMutation(api.teacherClasses.removeRosterEntry);
+  const updateRosterEntryDisplayName = useMutation(api.teacherClasses.updateRosterEntryDisplayName);
   const setStudentStatus = useMutation(api.attendance.setStudentStatus);
   const batchMarkClassUnresolvedAbsent = useMutation(api.attendance.batchMarkClassUnresolvedAbsent);
   const updateSettings = useMutation(api.attendance.updateSettings);
@@ -676,12 +679,31 @@ export default function TeacherDashboard() {
 
   useEffect(() => {
     if (rosterMatches.length === 0) return;
-    const next: Record<string, string> = {};
-    for (const match of rosterMatches) {
-      next[match.displayName] = match.suggestedStudentId?.toString() ?? "";
-    }
-    setRosterSelections(next);
+    setRosterSelections((current) => {
+      const next = { ...current };
+      rosterMatches.forEach((match, index) => {
+        const key = String(index);
+        if (next[key] === undefined) {
+          next[key] = match.suggestedStudentId?.toString() ?? "";
+        }
+      });
+      return next;
+    });
   }, [rosterMatches]);
+
+  useEffect(() => {
+    if (!classDetails?.roster) return;
+    setRosterNameDrafts((current) => {
+      const next = { ...current };
+      for (const entry of classDetails.roster) {
+        const entryId = entry._id.toString();
+        if (next[entryId] === undefined) {
+          next[entryId] = entry.displayName;
+        }
+      }
+      return next;
+    });
+  }, [classDetails?.roster]);
 
   const allStudentOptions = useMemo(
     () =>
@@ -1003,6 +1025,7 @@ export default function TeacherDashboard() {
     setManualEntryName("");
     setManualLinkedStudentId("");
     setLinkSelections({});
+    setRosterLinkQueries({});
     setDeleteConfirmation("");
     setDeleteError("");
   }
@@ -1196,14 +1219,36 @@ export default function TeacherDashboard() {
     setParsedRosterNames(names);
   }
 
+  function handleParsedRosterNameChange(index: number, value: string) {
+    setParsedRosterNames((current) => {
+      const next = [...current];
+      next[index] = value;
+      return next;
+    });
+  }
+
+  async function handleSaveRosterEntryDisplayName(
+    rosterEntryId: Id<"classRosterEntries">,
+    displayName: string,
+  ) {
+    if (!authenticatedTeacherId) return;
+    const trimmed = displayName.trim();
+    if (!trimmed) return;
+    await updateRosterEntryDisplayName({
+      teacherId: authenticatedTeacherId,
+      rosterEntryId,
+      displayName: trimmed,
+    });
+  }
+
   async function handleSaveUploadedRoster() {
     if (!authenticatedTeacherId || !selectedClassId || rosterMatches.length === 0) return;
     await saveUploadedRoster({
       teacherId: authenticatedTeacherId,
       classId: selectedClassId,
-      entries: rosterMatches.map((match) => ({
-        displayName: match.displayName,
-        linkedStudentId: (rosterSelections[match.displayName] || null) as Id<"students"> | null,
+      entries: rosterMatches.map((match, index) => ({
+        displayName: (parsedRosterNames[index] ?? match.displayName).trim(),
+        linkedStudentId: (rosterSelections[String(index)] || null) as Id<"students"> | null,
       })),
     });
     setRosterFile(null);
@@ -1235,6 +1280,7 @@ export default function TeacherDashboard() {
       linkedStudentId: linkedStudentId as Id<"students">,
     });
     setLinkSelections((current) => ({ ...current, [rosterEntryId.toString()]: "" }));
+    setRosterLinkQueries((current) => ({ ...current, [rosterEntryId.toString()]: "" }));
   }
 
   async function applyManualStatus(studentId: Id<"students">, status: ManualStatus) {
@@ -1779,12 +1825,23 @@ export default function TeacherDashboard() {
 
         {rosterMatches.length > 0 && (
           <div className="space-y-3">
-            {rosterMatches.map((match) => (
-              <div key={match.displayName} className="rounded-2xl border border-slate-200 px-4 py-4">
+            <p className="text-sm text-slate-500">
+              Review and edit parsed names before saving. Student linking updates as you edit each name.
+            </p>
+            {rosterMatches.map((match, index) => (
+              <div key={`${index}-${match.displayName}`} className="rounded-2xl border border-slate-200 px-4 py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <div className="font-semibold text-slate-900">{match.displayName}</div>
-                    <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Student name
+                    </label>
+                    <input
+                      type="text"
+                      value={parsedRosterNames[index] ?? match.displayName}
+                      onChange={(event) => handleParsedRosterNameChange(index, event.target.value)}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                    <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
                       {match.matchType === "exact"
                         ? "Exact match"
                         : match.matchType === "likely"
@@ -1795,11 +1852,11 @@ export default function TeacherDashboard() {
                     </div>
                   </div>
                   <select
-                    value={rosterSelections[match.displayName] ?? ""}
+                    value={rosterSelections[String(index)] ?? ""}
                     onChange={(event) =>
                       setRosterSelections((current) => ({
                         ...current,
-                        [match.displayName]: event.target.value,
+                        [String(index)]: event.target.value,
                       }))
                     }
                     className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 lg:w-80"
@@ -1807,7 +1864,7 @@ export default function TeacherDashboard() {
                     <option value="">Save as placeholder</option>
                     {match.candidates.map((candidate) => (
                       <option key={candidate.studentId.toString()} value={candidate.studentId.toString()}>
-                        {candidate.name} · {candidate.studentNumber}
+                        {candidate.name.split(" ")[0]} (Grade {candidate.grade ?? "—"}) · {candidate.name}
                       </option>
                     ))}
                   </select>
@@ -1891,8 +1948,11 @@ export default function TeacherDashboard() {
                         }}
                         className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-slate-50"
                       >
-                        <span className="font-medium text-slate-700">{student.name}</span>
-                        <span className="text-xs text-slate-400">{student.studentId}</span>
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-slate-700">{student.name.split(" ")[0]}</span>
+                          <span className="text-xs text-slate-400">{student.name}</span>
+                        </div>
+                        <span className="text-xs font-medium text-slate-500">Grade {student.grade ?? "—"}</span>
                       </button>
                     );
                   })
@@ -1921,9 +1981,33 @@ export default function TeacherDashboard() {
             {classDetails.roster.map((entry) => (
               <div key={entry._id.toString()} className="rounded-2xl border border-slate-200 px-4 py-4">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                  <div>
-                    <div className="font-semibold text-slate-900">{entry.displayName}</div>
-                    <div className="mt-1 text-sm text-slate-500">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Roster name
+                    </label>
+                    <input
+                      type="text"
+                      value={rosterNameDrafts[entry._id.toString()] ?? entry.displayName}
+                      onChange={(event) =>
+                        setRosterNameDrafts((current) => ({
+                          ...current,
+                          [entry._id.toString()]: event.target.value,
+                        }))
+                      }
+                      onBlur={(event) => {
+                        const draft = event.currentTarget.value.trim();
+                        if (draft && draft !== entry.displayName) {
+                          void handleSaveRosterEntryDisplayName(entry._id, draft);
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      className="w-full max-w-md rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                    <div className="text-sm text-slate-500">
                       {entry.linkedStudent
                         ? `${entry.linkedStudent.name} · ${entry.linkedStudent.studentId}`
                         : "Placeholder entry"}
@@ -1939,27 +2023,92 @@ export default function TeacherDashboard() {
                     </span>
 
                     {entry.status === "placeholder" && (
-                      <div className="flex flex-wrap gap-2">
-                        <select
-                          value={linkSelections[entry._id.toString()] ?? ""}
-                          onChange={(event) =>
-                            setLinkSelections((current) => ({
-                              ...current,
-                              [entry._id.toString()]: event.target.value,
-                            }))
-                          }
-                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                        >
-                          <option value="">Link to student...</option>
-                          {allStudentOptions.map((student) => (
-                            <option key={student._id.toString()} value={student._id.toString()}>
-                              {student.name} · {student.studentId}
-                            </option>
-                          ))}
-                        </select>
+                      <div className="flex flex-wrap gap-2 items-start">
+                        <div className="relative space-y-1">
+                          <input
+                            type="text"
+                            value={rosterLinkQueries[entry._id.toString()] ?? ""}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setRosterLinkQueries((current) => ({
+                                ...current,
+                                [entry._id.toString()]: nextValue,
+                              }));
+                              setLinkSelections((current) => ({
+                                ...current,
+                                [entry._id.toString()]: "",
+                              }));
+                            }}
+                            placeholder="Search student name..."
+                            className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-64"
+                          />
+                          {!linkSelections[entry._id.toString()] && (rosterLinkQueries[entry._id.toString()] ?? "").trim() && (
+                            <div className="absolute left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg w-64">
+                              {(() => {
+                                const term = (rosterLinkQueries[entry._id.toString()] ?? "").trim().toLowerCase();
+                                const filtered = allStudentOptions.filter((student) => {
+                                  const haystack = `${student.name} ${student.studentId} ${student.email ?? ""} ${student.grade ?? ""}`.toLowerCase();
+                                  return haystack.includes(term);
+                                }).slice(0, 8);
+                                
+                                return filtered.length > 0 ? (
+                                  filtered.map((student) => (
+                                    <button
+                                      key={student._id.toString()}
+                                      type="button"
+                                      onClick={() => {
+                                        setLinkSelections((current) => ({
+                                          ...current,
+                                          [entry._id.toString()]: student._id.toString(),
+                                        }));
+                                        setRosterLinkQueries((current) => ({
+                                          ...current,
+                                          [entry._id.toString()]: student.name,
+                                        }));
+                                      }}
+                                      className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-slate-50"
+                                    >
+                                      <div className="flex flex-col">
+                                        <span className="font-semibold text-slate-700">{student.name.split(" ")[0]}</span>
+                                        <span className="text-xs text-slate-400">{student.name}</span>
+                                      </div>
+                                      <span className="text-xs font-medium text-slate-500">Grade {student.grade ?? "—"}</span>
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="px-2 py-2 text-xs text-slate-400">No students match that search.</div>
+                                );
+                              })()}
+                            </div>
+                          )}
+                          {linkSelections[entry._id.toString()] && (
+                            <div className="flex items-center justify-between gap-2 mt-1 px-1">
+                              <span className="text-xs text-brand-600 font-medium">
+                                Ready to link: {allStudentOptions.find(s => s._id.toString() === linkSelections[entry._id.toString()])?.name}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLinkSelections((current) => ({
+                                    ...current,
+                                    [entry._id.toString()]: "",
+                                  }));
+                                  setRosterLinkQueries((current) => ({
+                                    ...current,
+                                    [entry._id.toString()]: "",
+                                  }));
+                                }}
+                                className="text-xs font-semibold text-slate-500 underline hover:text-slate-700"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         <button
                           onClick={() => handleLinkRosterEntry(entry._id)}
-                          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700"
+                          disabled={!linkSelections[entry._id.toString()]}
+                          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-300 hover:text-brand-700 disabled:opacity-50"
                         >
                           Link
                         </button>

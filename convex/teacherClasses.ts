@@ -554,6 +554,34 @@ export const addManualRosterEntry = mutation({
   },
 });
 
+export const updateRosterEntryDisplayName = mutation({
+  args: {
+    teacherId: v.id("teachers"),
+    rosterEntryId: v.id("classRosterEntries"),
+    displayName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const displayName = args.displayName.trim();
+    if (!displayName) {
+      throw new Error("Display name is required.");
+    }
+
+    const rosterEntry = await ctx.db.get(args.rosterEntryId);
+    if (!rosterEntry) throw new Error("Roster entry not found.");
+    const classDoc = await ctx.db.get(rosterEntry.classId);
+    if (!classDoc || classDoc.teacherId !== args.teacherId) {
+      throw new Error("Class not found.");
+    }
+
+    await ctx.db.patch(args.rosterEntryId, {
+      displayName,
+      updatedAt: now(),
+    });
+    await ctx.db.patch(rosterEntry.classId, { updatedAt: now() });
+    return args.rosterEntryId;
+  },
+});
+
 export const linkRosterEntry = mutation({
   args: {
     teacherId: v.id("teachers"),
