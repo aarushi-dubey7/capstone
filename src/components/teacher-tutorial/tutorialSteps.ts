@@ -45,7 +45,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "attendance-panel",
     title: "Take attendance",
-    body: "Pick the block, then mark each student present, absent, or excused. You can send unresolved students to the main office.",
+    body: "• Get your students to sign up and make an account; once they check in to your specific class, they will be marked as present.\n• In the student's page, you can mark that they have an activity.\n• If a student is marked as absent for the day, they will be suggested as absent, but if they check in, that will revert back to present.\n• Once you're ready, it will send your results to the main office.",
     target: "attendance-panel",
     advanceOn: "next",
   },
