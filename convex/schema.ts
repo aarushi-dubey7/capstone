@@ -19,6 +19,7 @@ export default defineSchema({
     email: v.string(),
     passwordHash: v.string(),
     createdAt: v.number(),
+    tutorialCompletedAt: v.optional(v.number()),
   }).index("by_email", ["email"]),
 
   // Each ESP32 beacon maps to one location

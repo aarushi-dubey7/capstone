@@ -5,7 +5,10 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import AttendanceMap from "../components/AttendanceMap";
 import DarkModeToggle from "../components/DarkModeToggle";
+import TutorialOverlay from "../components/teacher-tutorial/TutorialOverlay";
+import TutorialWelcomeModal from "../components/teacher-tutorial/TutorialWelcomeModal";
 import { clearStoredTeacherId, getStoredTeacherId, setStoredTeacherId } from "../hooks/useTeacher";
+import { isTutorialWelcomeDismissed, useTeacherTutorial } from "../hooks/useTeacherTutorial";
 
 type Tab = "attendance" | "classes" | "schedules" | "rooms" | "movement";
 type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
@@ -467,6 +470,10 @@ export default function TeacherDashboard() {
   const [isRosterDragActive, setIsRosterDragActive] = useState(false);
   const shownBrowserNotificationIdsRef = useRef<Set<string>>(new Set());
   const [manualReminderTimeInput, setManualReminderTimeInput] = useState("");
+  const [pendingTutorialWelcome, setPendingTutorialWelcome] = useState(false);
+  const hasShownWelcomeThisMountRef = useRef(false);
+
+  const tutorial = useTeacherTutorial();
 
   const teacherEmail = authEmailPrefix.trim() ? `${authEmailPrefix.trim().toLowerCase()}@bhpsnj.org` : "";
   const isSettingsPage = location.pathname === "/teacher/settings";
@@ -531,6 +538,7 @@ export default function TeacherDashboard() {
   ) ?? [];
 
   const registerTeacher = useMutation(api.teachers.register);
+  const markTutorialComplete = useMutation(api.teachers.markTutorialComplete);
   const createTeacherClass = useMutation(api.teacherClasses.create);
   const updateTeacherClass = useMutation(api.teacherClasses.update);
   const removeTeacherClass = useMutation(api.teacherClasses.remove);
@@ -568,6 +576,50 @@ export default function TeacherDashboard() {
   const [newOfficeEmail, setNewOfficeEmail] = useState("");
   const [isSendingToOffice, setIsSendingToOffice] = useState(false);
   const [sendToOfficeMessage, setSendToOfficeMessage] = useState({ text: "", type: "info" });
+
+  useEffect(() => {
+    if (!teacherProfile || teacherProfile.tutorialCompletedAt) return;
+    if (tutorial.phase !== "idle") return;
+    if (pendingTutorialWelcome) {
+      tutorial.showWelcome();
+      setPendingTutorialWelcome(false);
+      hasShownWelcomeThisMountRef.current = true;
+      return;
+    }
+    if (!hasShownWelcomeThisMountRef.current && !isTutorialWelcomeDismissed()) {
+      tutorial.showWelcome();
+      hasShownWelcomeThisMountRef.current = true;
+    }
+  }, [teacherProfile, pendingTutorialWelcome, tutorial.phase, tutorial.showWelcome]);
+
+  useEffect(() => {
+    if (!tutorial.isActive || tutorial.currentStep?.id !== "classes-intro") return;
+    setTab("classes");
+    exitClassesWorkspace();
+    const timer = window.setTimeout(() => tutorial.nextStep(), 350);
+    return () => window.clearTimeout(timer);
+  }, [tutorial.isActive, tutorial.currentStep?.id, tutorial.nextStep]);
+
+  useEffect(() => {
+    if (!tutorial.isActive || tutorial.currentStep?.id !== "create-class-btn") return;
+    if (classesViewMode === "creating") {
+      tutorial.nextStep();
+    }
+  }, [tutorial.isActive, tutorial.currentStep?.id, classesViewMode, tutorial.nextStep]);
+
+  useEffect(() => {
+    if (!tutorial.isActive || tutorial.currentStep?.id !== "class-form-submit") return;
+    if (selectedClassId) {
+      tutorial.nextStep();
+    }
+  }, [tutorial.isActive, tutorial.currentStep?.id, selectedClassId, tutorial.nextStep]);
+
+  useEffect(() => {
+    if (!tutorial.isActive || tutorial.currentStep?.id !== "roster-section") return;
+    if (classesViewMode === "createSuccess") {
+      tutorial.nextStep();
+    }
+  }, [tutorial.isActive, tutorial.currentStep?.id, classesViewMode, tutorial.nextStep]);
 
   useEffect(() => {
     initBellSchedules();
@@ -918,6 +970,7 @@ export default function TeacherDashboard() {
       setStoredTeacherId(teacher._id);
       setTeacherId(teacher._id);
       setAuthPassword("");
+      setPendingTutorialWelcome(true);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Could not create teacher account.");
     } finally {
@@ -1196,6 +1249,43 @@ export default function TeacherDashboard() {
   function finishCreateClassSetup() {
     setRecentlyCreatedClassName(classDetails?.class.name ?? (newClassForm.name.trim() || "Class"));
     setClassesViewMode("createSuccess");
+  }
+
+  function resetDashboardForTutorial() {
+    navigate("/teacher");
+    setTab("attendance");
+    exitClassesWorkspace();
+  }
+
+  function handleStartTutorialFromSettings() {
+    resetDashboardForTutorial();
+    tutorial.startTourFromSettings();
+  }
+
+  function handleTutorialWelcomeStart() {
+    resetDashboardForTutorial();
+    tutorial.startTour();
+  }
+
+  async function handleTutorialNext() {
+    if (tutorial.currentStep?.id === "done") {
+      if (authenticatedTeacherId) {
+        await markTutorialComplete({ teacherId: authenticatedTeacherId });
+      }
+      tutorial.exitTour();
+      return;
+    }
+    tutorial.nextStep();
+  }
+
+  function handleTutorialExit() {
+    if (window.confirm("Exit the tour? You can restart it anytime from Settings → Platform Tutorial.")) {
+      tutorial.exitTour();
+    }
+  }
+
+  function handleTutorialSkipRoster() {
+    finishCreateClassSetup();
   }
 
   function applyRosterFile(file: File) {
@@ -1661,6 +1751,7 @@ export default function TeacherDashboard() {
         <input
           type="text"
           value={newClassForm.name}
+          data-tutorial="class-form-name"
           onChange={(event) => {
             setCreateClassError("");
             setNewClassForm((current) => ({ ...current, name: event.target.value }));
@@ -1671,6 +1762,7 @@ export default function TeacherDashboard() {
         <input
           type="text"
           value={newClassForm.subject}
+          data-tutorial="class-form-subject"
           onChange={(event) => {
             setCreateClassError("");
             setNewClassForm((current) => ({ ...current, subject: event.target.value }));
@@ -1682,6 +1774,7 @@ export default function TeacherDashboard() {
           <input
             type="text"
             value={newClassForm.room}
+            data-tutorial="class-form-room"
             onChange={(event) => {
               setCreateClassError("");
               setNewClassForm((current) => ({ ...current, room: event.target.value }));
@@ -1701,6 +1794,7 @@ export default function TeacherDashboard() {
           />
           <select
             value={newClassForm.rotationBlock}
+            data-tutorial="class-form-block"
             onChange={(event) => {
               setCreateClassError("");
               setNewClassForm((current) => ({ ...current, rotationBlock: event.target.value }));
@@ -1718,7 +1812,12 @@ export default function TeacherDashboard() {
         {createClassError && (
           <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{createClassError}</div>
         )}
-        <button onClick={handleCreateClass} disabled={isCreatingClass} className="btn-primary w-full disabled:opacity-60">
+        <button
+          onClick={handleCreateClass}
+          disabled={isCreatingClass}
+          data-tutorial="class-form-submit"
+          className="btn-primary w-full disabled:opacity-60"
+        >
           {isCreatingClass ? "Creating Class..." : "Create Class"}
         </button>
       </div>
@@ -2712,6 +2811,22 @@ export default function TeacherDashboard() {
           </button>
         </div>
 
+        <div className="card space-y-3 xl:col-span-2">
+          <div>
+            <h3 className="font-semibold text-slate-800">Platform Tutorial</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Replay the guided walkthrough to learn how to use the dashboard and create a class.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleStartTutorialFromSettings}
+            className="btn-primary px-5 py-2.5 text-sm"
+          >
+            Start Tutorial
+          </button>
+        </div>
+
         <div className="grid gap-4 xl:grid-cols-2">
           <div className="card space-y-3">
             <div className="flex items-center gap-2">
@@ -3383,6 +3498,7 @@ export default function TeacherDashboard() {
               </button>
               <button
                 onClick={() => navigate("/teacher/settings")}
+                data-tutorial="header-settings"
                 className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${ isSettingsPage ? "border-white/40 bg-white text-brand-800" : "border-white/20 bg-white/10 text-white hover:bg-white/20" }`}
               >
                 Settings
@@ -3403,7 +3519,7 @@ export default function TeacherDashboard() {
           renderSettingsPanel()
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-5" data-tutorial="summary-cards">
               <SummaryCard value={teacherRoster?.summary.present ?? 0} label="Present" tone="text-emerald-600" />
               <SummaryCard value={teacherRoster?.summary.absent ?? 0} label="Absent" tone="text-red-600" />
               <SummaryCard value={teacherRoster?.summary.activityExcused ?? 0} label="Activity / Excused" tone="text-sky-600" />
@@ -3449,7 +3565,7 @@ export default function TeacherDashboard() {
               </div>
             )}
 
-            <div className="teacher-tab-nav mt-6 inline-flex rounded-2xl bg-slate-200 p-1">
+            <div className="teacher-tab-nav mt-6 inline-flex rounded-2xl bg-slate-200 p-1" data-tutorial="tab-nav">
               {([
                 ["attendance", "Attendance"],
                 ["classes", "Classes"],
@@ -3468,7 +3584,7 @@ export default function TeacherDashboard() {
             </div>
 
         {tab === "attendance" && (
-          <div className="mt-6">
+          <div className="mt-6" data-tutorial="attendance-panel">
             <div className="space-y-6">
               {teacherRoster?.shouldShowReminder && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
@@ -3756,7 +3872,7 @@ export default function TeacherDashboard() {
               {classesViewMode === "landing" && (
                 <>
                   <div className="flex justify-end">
-                    <button onClick={startCreateClassFlow} className="btn-primary px-6">
+                    <button onClick={startCreateClassFlow} className="btn-primary px-6" data-tutorial="create-class-btn">
                       Create Class
                     </button>
                   </div>
@@ -3779,7 +3895,7 @@ export default function TeacherDashboard() {
                   {renderBackButton()}
                   {renderCreateClassFormCard()}
                   {selectedClassId ? (
-                    <>
+                    <div data-tutorial="roster-section" className="space-y-4">
                       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-800">
                         Nice — your class exists now. Finish the roster steps below, then wrap up setup.
                       </div>
@@ -3789,7 +3905,7 @@ export default function TeacherDashboard() {
                       <button onClick={finishCreateClassSetup} className="btn-primary w-full">
                         Finish Class Setup
                       </button>
-                    </>
+                    </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center text-sm text-slate-400">
                       Create the class details first, then the roster steps will appear here.
@@ -3801,7 +3917,7 @@ export default function TeacherDashboard() {
               {classesViewMode === "createSuccess" && (
                 <>
                   {renderBackButton()}
-                  <div className="card space-y-4 text-center">
+                  <div className="card space-y-4 text-center" data-tutorial="create-success">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-xl font-bold text-emerald-700">
                       OK
                     </div>
@@ -4365,6 +4481,25 @@ export default function TeacherDashboard() {
           </>
         )}
       </main>
+
+      {tutorial.phase === "welcome" && teacherProfile && (
+        <TutorialWelcomeModal
+          teacherName={teacherProfile.name}
+          onStart={handleTutorialWelcomeStart}
+          onSkip={tutorial.skipWelcome}
+        />
+      )}
+
+      {tutorial.isActive && tutorial.currentStep && (
+        <TutorialOverlay
+          step={tutorial.currentStep}
+          stepIndex={tutorial.stepIndex}
+          stepCount={tutorial.stepCount}
+          onNext={handleTutorialNext}
+          onExit={handleTutorialExit}
+          onSkipRoster={tutorial.currentStep.showSkipRoster ? handleTutorialSkipRoster : undefined}
+        />
+      )}
     </div>
   );
 }

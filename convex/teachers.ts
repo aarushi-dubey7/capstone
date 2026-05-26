@@ -54,7 +54,36 @@ export const register = mutation({
       _id: teacherId,
       name: args.name.trim(),
       email,
+      tutorialCompletedAt: undefined,
     };
+  },
+});
+
+export const markTutorialComplete = mutation({
+  args: { teacherId: v.id("teachers") },
+  handler: async (ctx, { teacherId }) => {
+    const teacher = await ctx.db.get(teacherId);
+    if (!teacher) {
+      throw new Error("Teacher not found.");
+    }
+    if (teacher.tutorialCompletedAt !== undefined) {
+      return { tutorialCompletedAt: teacher.tutorialCompletedAt };
+    }
+    const tutorialCompletedAt = Date.now();
+    await ctx.db.patch(teacherId, { tutorialCompletedAt });
+    return { tutorialCompletedAt };
+  },
+});
+
+export const resetTutorial = mutation({
+  args: { teacherId: v.id("teachers") },
+  handler: async (ctx, { teacherId }) => {
+    const teacher = await ctx.db.get(teacherId);
+    if (!teacher) {
+      throw new Error("Teacher not found.");
+    }
+    await ctx.db.patch(teacherId, { tutorialCompletedAt: undefined });
+    return { tutorialCompletedAt: undefined };
   },
 });
 
@@ -79,6 +108,7 @@ export const login = query({
       name: teacher.name,
       email: teacher.email,
       createdAt: teacher.createdAt,
+      tutorialCompletedAt: teacher.tutorialCompletedAt,
     };
   },
 });
@@ -94,6 +124,7 @@ export const getById = query({
         name: teacher.name,
         email: teacher.email,
         createdAt: teacher.createdAt,
+        tutorialCompletedAt: teacher.tutorialCompletedAt,
       };
     } catch {
       return null;
