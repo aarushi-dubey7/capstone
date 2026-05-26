@@ -75,7 +75,6 @@ export const getByStudentId = query({
   args: { studentId: v.string() },
   handler: async (ctx, { studentId }) => {
     const normalizedStudentId = normalizeStudentId(studentId);
-    assertStudentIdLength(normalizedStudentId);
 
     return ctx.db
       .query("students")
@@ -91,7 +90,6 @@ export const login = query({
   },
   handler: async (ctx, { email, studentId }) => {
     const normalizedStudentId = normalizeStudentId(studentId);
-    assertStudentIdLength(normalizedStudentId);
 
     const student = await ctx.db
       .query("students")

@@ -4,8 +4,6 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { getStoredStudentId, setStoredStudentId } from "../hooks/useStudent";
 
-const MAX_STUDENT_ID_LENGTH = 7;
-
 export default function Home() {
   const navigate = useNavigate();
   const storedId = getStoredStudentId();
@@ -35,10 +33,6 @@ export default function Home() {
   function handleLoginCheck() {
     if (!loginEmail.trim() || !loginStudentId.trim()) {
       setLoginError("Please fill in both fields.");
-      return;
-    }
-    if (loginStudentId.trim().length > MAX_STUDENT_ID_LENGTH) {
-      setLoginError(`Password must be ${MAX_STUDENT_ID_LENGTH} characters or fewer.`);
       return;
     }
     setLoginError("");
@@ -122,11 +116,10 @@ export default function Home() {
                   type={showPassword ? "text" : "password"}
                   value={loginStudentId}
                   onChange={(e) => {
-                    setLoginStudentId(e.target.value.slice(0, MAX_STUDENT_ID_LENGTH));
+                    setLoginStudentId(e.target.value);
                     setLoginError("");
                     setSubmitted(false);
                   }}
-                  maxLength={MAX_STUDENT_ID_LENGTH}
                   placeholder="123456"
                   className="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 rounded-xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
@@ -148,9 +141,6 @@ export default function Home() {
                   )}
                 </button>
               </div>
-              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                Up to {MAX_STUDENT_ID_LENGTH} characters.
-              </p>
             </div>
 
             {loginError && (
