@@ -1048,12 +1048,28 @@ export default function TeacherDashboard() {
       filters.push({ namePrefix: `Room ${editingRoom}` });
       filters.push({ namePrefix: "Room-" });
 
+      const optionalServicesList = new Set<string>([
+        "000000c2-0000-1000-8000-00805f9b34fb",
+        "00000b12-0000-1000-8000-00805f9b34fb",
+        "00000b15-0000-1000-8000-00805f9b34fb",
+        "00000b16-0000-1000-8000-00805f9b34fb",
+      ]);
+
+      if (editingRoom) {
+        const cleanRoom = editingRoom.trim().replace(/[^a-zA-Z0-9]/g, "");
+        const firstBlock = cleanRoom.padStart(8, "0").toLowerCase();
+        optionalServicesList.add(`${firstBlock}-0000-1000-8000-00805f9b34fb`);
+      }
+
+      allLocations.forEach((loc) => {
+        if (loc.uuid) {
+          optionalServicesList.add(loc.uuid.toLowerCase());
+        }
+      });
+
       const device = await navigator.bluetooth.requestDevice({
         filters,
-        optionalServices: [
-          "000000c2-0000-1000-8000-00805f9b34fb",
-          "00000b12-0000-1000-8000-00805f9b34fb",
-        ].map((service) => service.toLowerCase()),
+        optionalServices: Array.from(optionalServicesList),
       });
 
       const server = await device.gatt?.connect();
