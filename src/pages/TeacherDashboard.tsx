@@ -424,6 +424,7 @@ export default function TeacherDashboard() {
   const [manualLinkedStudentQuery, setManualLinkedStudentQuery] = useState("");
   const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
   const [rosterLinkQueries, setRosterLinkQueries] = useState<Record<string, string>>({});
+  const [headerSearchQuery, setHeaderSearchQuery] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [rosterPreviewImage, setRosterPreviewImage] = useState<string | null>(null);
@@ -432,6 +433,8 @@ export default function TeacherDashboard() {
   const [parsedRosterNames, setParsedRosterNames] = useState<string[]>([]);
   const [rosterSelections, setRosterSelections] = useState<Record<string, string>>({});
   const [rosterNameDrafts, setRosterNameDrafts] = useState<Record<string, string>>({});
+  const [editingRosterEntryIds, setEditingRosterEntryIds] = useState<Record<string, boolean>>({});
+  const [savingRosterEntryId, setSavingRosterEntryId] = useState<string | null>(null);
   const [rosterParseError, setRosterParseError] = useState("");
   const [isParsingRoster, setIsParsingRoster] = useState(false);
   const [isRosterDragActive, setIsRosterDragActive] = useState(false);
@@ -717,13 +720,12 @@ export default function TeacherDashboard() {
       const next = { ...current };
       for (const entry of classDetails.roster) {
         const entryId = entry._id.toString();
-        if (next[entryId] === undefined) {
-          next[entryId] = entry.displayName;
-        }
+        if (editingRosterEntryIds[entryId]) continue;
+        next[entryId] = entry.displayName;
       }
       return next;
     });
-  }, [classDetails?.roster]);
+  }, [classDetails?.roster, editingRosterEntryIds]);
 
   const allStudentOptions = useMemo(
     () =>
@@ -1247,18 +1249,44 @@ export default function TeacherDashboard() {
     });
   }
 
+  function startEditRosterEntryName(entryId: string, displayName: string) {
+    setEditingRosterEntryIds((current) => ({ ...current, [entryId]: true }));
+    setRosterNameDrafts((current) => ({ ...current, [entryId]: displayName }));
+  }
+
+  function cancelEditRosterEntryName(entryId: string, displayName: string) {
+    setEditingRosterEntryIds((current) => {
+      const next = { ...current };
+      delete next[entryId];
+      return next;
+    });
+    setRosterNameDrafts((current) => ({ ...current, [entryId]: displayName }));
+  }
+
   async function handleSaveRosterEntryDisplayName(
     rosterEntryId: Id<"classRosterEntries">,
     displayName: string,
   ) {
     if (!authenticatedTeacherId) return;
+    const entryId = rosterEntryId.toString();
     const trimmed = displayName.trim();
     if (!trimmed) return;
-    await updateRosterEntryDisplayName({
-      teacherId: authenticatedTeacherId,
-      rosterEntryId,
-      displayName: trimmed,
-    });
+    setSavingRosterEntryId(entryId);
+    try {
+      await updateRosterEntryDisplayName({
+        teacherId: authenticatedTeacherId,
+        rosterEntryId,
+        displayName: trimmed,
+      });
+      setRosterNameDrafts((current) => ({ ...current, [entryId]: trimmed }));
+      setEditingRosterEntryIds((current) => {
+        const next = { ...current };
+        delete next[entryId];
+        return next;
+      });
+    } finally {
+      setSavingRosterEntryId((current) => (current === entryId ? null : current));
+    }
   }
 
   async function handleSaveUploadedRoster() {
@@ -1990,41 +2018,80 @@ export default function TeacherDashboard() {
   function renderClassRosterSection() {
     return (
       <div className="card space-y-4">
-        <h3 className="text-lg font-semibold text-slate-900">Class Roster</h3>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Class Roster</h3>
         {classDetails === undefined ? (
           <p className="text-sm text-slate-400">Loading roster details...</p>
         ) : classDetails?.roster.length ? (
           <div className="space-y-3">
-            {classDetails.roster.map((entry) => (
-              <div key={entry._id.toString()} className="rounded-2xl border border-slate-200 px-4 py-4">
+            {classDetails.roster.map((entry) => {
+              const entryId = entry._id.toString();
+              const isEditingName = Boolean(editingRosterEntryIds[entryId]);
+              const nameDraft = rosterNameDrafts[entryId] ?? entry.displayName;
+              const trimmedDraft = nameDraft.trim();
+              const nameDraftDirty = trimmedDraft !== entry.displayName;
+              const isSavingName = savingRosterEntryId === entryId;
+
+              return (
+              <div key={entryId} className="rounded-2xl border border-slate-200 px-4 py-4 dark:border-slate-600">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <div className="min-w-0 flex-1 space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-400">
                       Roster name
                     </label>
-                    <input
-                      type="text"
-                      value={rosterNameDrafts[entry._id.toString()] ?? entry.displayName}
-                      onChange={(event) =>
-                        setRosterNameDrafts((current) => ({
-                          ...current,
-                          [entry._id.toString()]: event.target.value,
-                        }))
-                      }
-                      onBlur={(event) => {
-                        const draft = event.currentTarget.value.trim();
-                        if (draft && draft !== entry.displayName) {
-                          void handleSaveRosterEntryDisplayName(entry._id, draft);
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      className="w-full max-w-md rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                    <div className="text-sm text-slate-500">
+                    {isEditingName ? (
+                      <div className="flex max-w-xl flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          type="text"
+                          value={nameDraft}
+                          autoFocus
+                          onChange={(event) =>
+                            setRosterNameDrafts((current) => ({
+                              ...current,
+                              [entryId]: event.target.value,
+                            }))
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && nameDraftDirty && trimmedDraft) {
+                              void handleSaveRosterEntryDisplayName(entry._id, nameDraft);
+                            }
+                            if (event.key === "Escape") {
+                              cancelEditRosterEntryName(entryId, entry.displayName);
+                            }
+                          }}
+                          className={`w-full flex-1 px-3 py-2 ${teacherFieldInputClass}`}
+                        />
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveRosterEntryDisplayName(entry._id, nameDraft)}
+                            disabled={!nameDraftDirty || !trimmedDraft || isSavingName}
+                            className="rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isSavingName ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => cancelEditRosterEntryName(entryId, entry.displayName)}
+                            disabled={isSavingName}
+                            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex max-w-xl flex-wrap items-center gap-3">
+                        <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{entry.displayName}</p>
+                        <button
+                          type="button"
+                          onClick={() => startEditRosterEntryName(entryId, entry.displayName)}
+                          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-slate-600 dark:text-slate-200 dark:hover:border-slate-500 dark:hover:text-white"
+                        >
+                          Edit name
+                        </button>
+                      </div>
+                    )}
+                    <div className="text-sm text-slate-500 dark:text-slate-400">
                       {entry.linkedStudent
                         ? `${entry.linkedStudent.name} · ${entry.linkedStudent.studentId}`
                         : "Placeholder entry"}
@@ -2144,7 +2211,8 @@ export default function TeacherDashboard() {
                   </div>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         ) : (
           <p className="text-sm text-slate-400">This class does not have a roster yet.</p>
@@ -2934,6 +3002,203 @@ export default function TeacherDashboard() {
             <p className="mt-2 text-sm text-brand-200">
               Signed in as {teacherProfile?.name} · {teacherProfile?.email}
             </p>
+          </div>
+
+          {headerSearchQuery && (
+            <div className="fixed inset-0 z-40 cursor-default" onClick={() => setHeaderSearchQuery("")} />
+          )}
+
+          <div className="relative flex-1 max-w-md mx-6 self-center z-50">
+            <div className="relative">
+              <input
+                type="text"
+                value={headerSearchQuery}
+                onChange={(e) => setHeaderSearchQuery(e.target.value)}
+                placeholder="Search students, classes, rooms..."
+                className="w-full rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 pl-10 text-sm text-white placeholder-white/40 focus:outline-none focus:bg-white/20 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-white/40">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              {headerSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setHeaderSearchQuery("")}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-white/40 hover:text-white"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            {headerSearchQuery && (
+              <div className="absolute left-0 right-0 z-50 mt-1 max-h-96 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-2xl text-slate-800 dark:text-slate-100">
+                {(() => {
+                  const term = headerSearchQuery.trim().toLowerCase();
+                  const matchingStudents = term
+                    ? allStudents
+                        .filter((s) => s.role === "student" && (s.name.toLowerCase().includes(term) || s.studentId.includes(term) || (s.email?.toLowerCase().includes(term) ?? false)))
+                        .slice(0, 3)
+                    : [];
+                  const matchingClasses = term
+                    ? teacherClasses
+                        .filter((c) => c.name.toLowerCase().includes(term) || (c.subject?.toLowerCase().includes(term) ?? false) || c.room.toLowerCase().includes(term))
+                        .slice(0, 3)
+                    : [];
+                  const matchingRooms = term
+                    ? allLocations
+                        .filter((l) => l.roomNumber.toLowerCase().includes(term) || l.name.toLowerCase().includes(term))
+                        .slice(0, 3)
+                    : [];
+                  const navItems = [
+                    { label: "Attendance", tab: "attendance" },
+                    { label: "Classes", tab: "classes" },
+                    { label: "Students", tab: "schedules" },
+                    { label: "Rooms", tab: "rooms" },
+                    { label: "Movement", tab: "movement" },
+                    { label: "Settings", route: "/teacher/settings" },
+                  ];
+                  const matchingNav = term
+                    ? navItems.filter((item) => item.label.toLowerCase().includes(term)).slice(0, 3)
+                    : [];
+
+                  if (matchingStudents.length === 0 && matchingClasses.length === 0 && matchingRooms.length === 0 && matchingNav.length === 0) {
+                    return <div className="px-3 py-2 text-sm text-slate-400 dark:text-slate-500">No results found.</div>;
+                  }
+
+                  const handleSearchSelect = (item: {
+                    type: "student" | "class" | "room" | "nav";
+                    id?: string;
+                    name?: string;
+                    tab?: string;
+                    route?: string;
+                  }) => {
+                    setHeaderSearchQuery("");
+                    
+                    if (isSettingsPage && item.route !== "/teacher/settings") {
+                      navigate("/teacher");
+                    }
+
+                    if (item.type === "student" && item.id) {
+                      setTab("schedules");
+                      setSelectedStudentId(item.id as Id<"students">);
+                    } else if (item.type === "class" && item.id) {
+                      setTab("classes");
+                      openClassWorkspace(item.id as Id<"teacherClasses">);
+                    } else if (item.type === "room" && item.name) {
+                      setTab("rooms");
+                      openRoomForm(item.name);
+                    } else if (item.type === "nav") {
+                      if (item.route) {
+                        navigate(item.route);
+                      } else if (item.tab) {
+                        setTab(item.tab as Tab);
+                      }
+                    }
+                  };
+
+                  return (
+                    <div className="space-y-3">
+                      {matchingNav.length > 0 && (
+                        <div>
+                          <div className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">
+                            Navigation
+                          </div>
+                          <div className="space-y-0.5">
+                            {matchingNav.map((item) => (
+                              <button
+                                key={item.label}
+                                type="button"
+                                onClick={() => handleSearchSelect({ type: "nav", tab: item.tab, route: item.route })}
+                                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <span className="font-medium">{item.label}</span>
+                                <span className="text-xs text-slate-400">Go to tab</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {matchingClasses.length > 0 && (
+                        <div>
+                          <div className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">
+                            Classes
+                          </div>
+                          <div className="space-y-0.5">
+                            {matchingClasses.map((c) => (
+                              <button
+                                key={c._id.toString()}
+                                type="button"
+                                onClick={() => handleSearchSelect({ type: "class", id: c._id.toString() })}
+                                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{c.name}</span>
+                                  <span className="text-xs text-slate-400">{c.subject ?? "No subject"} · Room {c.room}</span>
+                                </div>
+                                <span className="text-xs text-slate-400">Open class</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {matchingStudents.length > 0 && (
+                        <div>
+                          <div className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">
+                            Students
+                          </div>
+                          <div className="space-y-0.5">
+                            {matchingStudents.map((s) => (
+                              <button
+                                key={s._id.toString()}
+                                type="button"
+                                onClick={() => handleSearchSelect({ type: "student", id: s._id.toString() })}
+                                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{s.name}</span>
+                                  <span className="text-xs text-slate-400">ID: {s.studentId} · Grade {s.grade ?? "—"}</span>
+                                </div>
+                                <span className="text-xs text-slate-400">View profile</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {matchingRooms.length > 0 && (
+                        <div>
+                          <div className="px-3 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">
+                            Rooms
+                          </div>
+                          <div className="space-y-0.5">
+                            {matchingRooms.map((r) => (
+                              <button
+                                key={r._id.toString()}
+                                type="button"
+                                onClick={() => handleSearchSelect({ type: "room", name: r.roomNumber })}
+                                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">Room {r.roomNumber}</span>
+                                  <span className="text-xs text-slate-400">{r.name}</span>
+                                </div>
+                                <span className="text-xs text-slate-400">Configure beacon</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col items-end gap-3">
