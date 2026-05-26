@@ -15,8 +15,11 @@ import type * as classes from "../classes.js";
 import type * as groq from "../groq.js";
 import type * as locations from "../locations.js";
 import type * as scheduleRotation from "../scheduleRotation.js";
+import type * as scheduledActivities from "../scheduledActivities.js";
 import type * as schedules from "../schedules.js";
 import type * as students from "../students.js";
+import type * as teacherClasses from "../teacherClasses.js";
+import type * as teachers from "../teachers.js";
 import type * as weekDayMapping from "../weekDayMapping.js";
 
 import type {
@@ -33,8 +36,11 @@ declare const fullApi: ApiFromModules<{
   groq: typeof groq;
   locations: typeof locations;
   scheduleRotation: typeof scheduleRotation;
+  scheduledActivities: typeof scheduledActivities;
   schedules: typeof schedules;
   students: typeof students;
+  teacherClasses: typeof teacherClasses;
+  teachers: typeof teachers;
   weekDayMapping: typeof weekDayMapping;
 }>;
 

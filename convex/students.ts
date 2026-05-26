@@ -1,6 +1,17 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeRoom(locationName: string) {
+  return locationName.replace(/^Room\s+/i, "").trim().toLowerCase();
+}
+
 export const register = mutation({
   args: {
     name: v.string(),
@@ -29,7 +40,6 @@ export const getByStudentId = query({
   },
 });
 
-// Login: verify email + studentId match
 export const login = query({
   args: {
     email: v.string(),
@@ -41,7 +51,6 @@ export const login = query({
       .withIndex("by_studentId", (q) => q.eq("studentId", studentId))
       .first();
     if (!student) return null;
-    // Check that the stored email matches (case-insensitive)
     if (!student.email || student.email.toLowerCase() !== email.toLowerCase()) {
       return null;
     }
@@ -53,5 +62,191 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     return ctx.db.query("students").order("asc").collect();
+  },
+});
+
+export const getInsights = query({
+  args: { studentId: v.id("students") },
+  handler: async (ctx, { studentId }) => {
+    const [student, logs, explicitStatuses, allLogs, allRotations, classes, scheduledActivities] = await Promise.all([
+      ctx.db.get(studentId),
+      ctx.db
+        .query("logs")
+        .withIndex("by_student", (q) => q.eq("studentId", studentId))
+        .order("desc")
+        .collect(),
+      ctx.db
+        .query("attendanceStatus")
+        .withIndex("by_student_and_date", (q) => q.eq("studentId", studentId))
+        .collect(),
+      ctx.db.query("logs").collect(),
+      ctx.db.query("scheduleRotation").collect(),
+      ctx.db.query("classes").collect(),
+      ctx.db
+        .query("scheduledActivities")
+        .withIndex("by_student_and_date", (q) => q.eq("studentId", studentId))
+        .collect(),
+    ]);
+
+    if (!student) return null;
+
+    const classByRoom = new Map(classes.map((entry) => [entry.room.toLowerCase(), entry]));
+    const logsByDate = new Map<string, typeof logs>();
+    const explicitByDate = new Map(explicitStatuses.map((status) => [status.date, status]));
+    const scheduledByDate = new Map(scheduledActivities.map((activity) => [activity.date, activity]));
+    const schoolDays = new Set<string>();
+    const today = localDateString();
+
+    for (const rotation of allRotations) {
+      if (rotation.dayLabel !== "No School" && rotation.date <= today) {
+        schoolDays.add(rotation.date);
+      }
+    }
+    if (schoolDays.size === 0) {
+      for (const log of allLogs) {
+        if (log.date <= today) schoolDays.add(log.date);
+      }
+    }
+
+    for (const log of logs) {
+      const existing = logsByDate.get(log.date) ?? [];
+      existing.push(log);
+      logsByDate.set(log.date, existing);
+    }
+
+    const dates = new Set<string>([...logsByDate.keys(), ...explicitByDate.keys()]);
+    const attendanceByDay = [...dates]
+      .sort((a, b) => b.localeCompare(a))
+      .map((date) => {
+        const dayLogs = [...(logsByDate.get(date) ?? [])].sort((a, b) => a.timestamp - b.timestamp);
+        const explicit = explicitByDate.get(date);
+        const scheduled = scheduledByDate.get(date);
+        const derivedStatus =
+          explicit?.status ??
+          (scheduled && date >= today ? "activity" : dayLogs.length > 0 ? "present" : "unresolved");
+
+        return {
+          date,
+          status: derivedStatus,
+          activityLabel:
+            explicit?.status === "activity"
+              ? explicit.activityLabel ?? null
+              : scheduled?.activityLabel ?? null,
+          reason: explicit?.reason ?? null,
+          entries: dayLogs.map((log) => {
+            const classEntry = classByRoom.get(normalizeRoom(log.locationName));
+            return {
+              timestamp: log.timestamp,
+              locationName: log.locationName,
+              isLate: log.isLate,
+              subject: classEntry?.subject ?? null,
+              teacherName: classEntry?.teacherName ?? null,
+              period: classEntry?.period ?? null,
+            };
+          }),
+        };
+      });
+
+    let tardyCount = 0;
+    let presentDays = 0;
+    let absenceCount = 0;
+    let activityCount = 0;
+    let excusedCount = 0;
+
+    for (const log of logs) {
+      if (log.isLate) tardyCount += 1;
+    }
+
+    for (const date of schoolDays) {
+      const explicit = explicitByDate.get(date);
+      const dayLogs = logsByDate.get(date) ?? [];
+      const derivedStatus = explicit?.status ?? (dayLogs.length > 0 ? "present" : "unresolved");
+
+      if (derivedStatus === "activity") {
+        activityCount += 1;
+      } else if (derivedStatus === "excused") {
+        excusedCount += 1;
+      } else if (derivedStatus === "absent" || derivedStatus === "unresolved") {
+        absenceCount += 1;
+      } else if (derivedStatus === "present") {
+        presentDays += 1;
+      }
+    }
+
+    const todayExplicit = explicitByDate.get(today);
+    const todayLogs = logsByDate.get(today) ?? [];
+    const todayScheduled = scheduledByDate.get(today);
+    const currentDayStatus =
+      todayExplicit?.status ??
+      (todayScheduled ? "activity" : todayLogs.length > 0 ? "present" : "unresolved");
+
+    return {
+      student,
+      stats: {
+        tardyCount,
+        absenceCount,
+        activityCount,
+        excusedCount,
+        attendedDays: presentDays,
+        totalSchoolDays: schoolDays.size,
+        totalCheckIns: logs.length,
+      },
+      currentDayStatus,
+      attendanceByDay,
+      upcomingActivities: scheduledActivities
+        .filter((activity) => activity.date >= today)
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    };
+  },
+});
+
+export const remove = mutation({
+  args: { id: v.id("students") },
+  handler: async (ctx, { id }) => {
+    const student = await ctx.db.get(id);
+    if (!student) return null;
+
+    const [logs, schedules, statuses, activities, rosterEntries] = await Promise.all([
+      ctx.db
+        .query("logs")
+        .withIndex("by_student", (q) => q.eq("studentId", id))
+        .collect(),
+      ctx.db
+        .query("schedules")
+        .withIndex("by_student", (q) => q.eq("studentId", id))
+        .collect(),
+      ctx.db
+        .query("attendanceStatus")
+        .withIndex("by_student_and_date", (q) => q.eq("studentId", id))
+        .collect(),
+      ctx.db
+        .query("scheduledActivities")
+        .withIndex("by_student_and_date", (q) => q.eq("studentId", id))
+        .collect(),
+      ctx.db
+        .query("classRosterEntries")
+        .withIndex("by_linkedStudentId", (q) => q.eq("linkedStudentId", id))
+        .collect(),
+    ]);
+
+    for (const log of logs) await ctx.db.delete(log._id);
+    for (const schedule of schedules) await ctx.db.delete(schedule._id);
+    for (const status of statuses) await ctx.db.delete(status._id);
+    for (const activity of activities) await ctx.db.delete(activity._id);
+    for (const rosterEntry of rosterEntries) {
+      await ctx.db.patch(rosterEntry._id, {
+        linkedStudentId: undefined,
+        status: "placeholder",
+        updatedAt: Date.now(),
+      });
+    }
+
+    await ctx.db.delete(id);
+    return {
+      deletedId: id,
+      deletedName: student.name,
+      deletedLogs: logs.length,
+      deletedActivities: activities.length,
+    };
   },
 });
