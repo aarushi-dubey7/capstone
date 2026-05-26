@@ -38,6 +38,7 @@ const CLASS_PRIMARY_NAV_SECTIONS: Array<{ key: "details" | "stats"; label: strin
 const CLASS_DETAILS_NAV_SECTIONS = CLASS_WORKSPACE_SECTIONS.filter(
   (section) => section.key !== "details" && section.key !== "stats",
 );
+const MAX_STUDENT_PASSWORD_LENGTH = 7;
 const ROTATION_DAY_SLOTS = {
   "Day 1": [
     { timeRange: "8:17-9:13", label: "A" },
@@ -455,12 +456,12 @@ export default function TeacherDashboard() {
   const [rosterNameDrafts, setRosterNameDrafts] = useState<Record<string, string>>({});
   const [editingRosterEntryIds, setEditingRosterEntryIds] = useState<Record<string, boolean>>({});
   const [savingRosterEntryId, setSavingRosterEntryId] = useState<string | null>(null);
-  // const [showStudentPassword, setShowStudentPassword] = useState(false);
-  // const [newStudentPassword, setNewStudentPassword] = useState("");
-  // const [confirmStudentPassword, setConfirmStudentPassword] = useState("");
-  // const [passwordChangeError, setPasswordChangeError] = useState("");
-  // const [passwordChangeSuccess, setPasswordChangeSuccess] = useState("");
-  // const [isUpdatingStudentPassword, setIsUpdatingStudentPassword] = useState(false);
+  const [showStudentPassword, setShowStudentPassword] = useState(false);
+  const [newStudentPassword, setNewStudentPassword] = useState("");
+  const [confirmStudentPassword, setConfirmStudentPassword] = useState("");
+  const [passwordChangeError, setPasswordChangeError] = useState("");
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState("");
+  const [isUpdatingStudentPassword, setIsUpdatingStudentPassword] = useState(false);
   const [rosterParseError, setRosterParseError] = useState("");
   const [isParsingRoster, setIsParsingRoster] = useState(false);
   const [isRosterDragActive, setIsRosterDragActive] = useState(false);
@@ -555,7 +556,7 @@ export default function TeacherDashboard() {
   const markAllNotificationsRead = useMutation(api.notifications.markAllAsRead);
   const createTestNotification = useMutation(api.notifications.createTestNotification);
   const removeStudent = useMutation(api.students.remove);
-  // const updateStudentPasswordByTeacher = useMutation(api.students.updatePasswordByTeacher);
+  const updateStudentPasswordByTeacher = useMutation(api.students.updatePasswordByTeacher);
   const parseRosterImage = useAction(api.groq.parseRosterImage);
   const initBellSchedules = useMutation(api.bellSchedules.initialize);
   const setRotation = useMutation(api.scheduleRotation.set);
@@ -640,11 +641,11 @@ export default function TeacherDashboard() {
   useEffect(() => {
     setAttendanceLookupOpen(false);
     setAttendanceLookupDate("");
-    // setShowStudentPassword(false);
-    // setNewStudentPassword("");
-    // setConfirmStudentPassword("");
-    // setPasswordChangeError("");
-    // setPasswordChangeSuccess("");
+    setShowStudentPassword(false);
+    setNewStudentPassword("");
+    setConfirmStudentPassword("");
+    setPasswordChangeError("");
+    setPasswordChangeSuccess("");
   }, [selectedStudentId]);
 
   useEffect(() => {
@@ -1295,50 +1296,50 @@ export default function TeacherDashboard() {
     setRosterNameDrafts((current) => ({ ...current, [entryId]: displayName }));
   }
 
-  // async function handleUpdateStudentPassword() {
-  //   if (!authenticatedTeacherId || !selectedStudentId || !selectedStudent) return;
-  // 
-  //   const trimmed = newStudentPassword.trim();
-  //   const confirmed = confirmStudentPassword.trim();
-  //   setPasswordChangeError("");
-  //   setPasswordChangeSuccess("");
-  // 
-  //   if (!trimmed) {
-  //     setPasswordChangeError("Enter a new password.");
-  //     return;
-  //   }
-  //   if (trimmed.length > MAX_STUDENT_PASSWORD_LENGTH) {
-  //     setPasswordChangeError(`Password must be ${MAX_STUDENT_PASSWORD_LENGTH} characters or fewer.`);
-  //     return;
-  //   }
-  //   if (trimmed !== confirmed) {
-  //     setPasswordChangeError("New password and confirmation do not match.");
-  //     return;
-  //   }
-  //   if (trimmed === selectedStudent.studentId) {
-  //     setPasswordChangeError("That is already this student's password.");
-  //     return;
-  //   }
-  // 
-  //   setIsUpdatingStudentPassword(true);
-  //   try {
-  //     await updateStudentPasswordByTeacher({
-  //       teacherId: authenticatedTeacherId,
-  //       studentId: selectedStudentId,
-  //       newPassword: trimmed,
-  //     });
-  //     setNewStudentPassword("");
-  //     setConfirmStudentPassword("");
-  //     setShowStudentPassword(false);
-  //     setPasswordChangeSuccess(
-  //       `${selectedStudent.name} was notified in the student portal. Check your notifications for confirmation.`,
-  //     );
-  //   } catch (error) {
-  //     setPasswordChangeError(error instanceof Error ? error.message : "Could not update password.");
-  //   } finally {
-  //     setIsUpdatingStudentPassword(false);
-  //   }
-  // }
+  async function handleUpdateStudentPassword() {
+    if (!authenticatedTeacherId || !selectedStudentId || !selectedStudent) return;
+
+    const trimmed = newStudentPassword.trim();
+    const confirmed = confirmStudentPassword.trim();
+    setPasswordChangeError("");
+    setPasswordChangeSuccess("");
+
+    if (!trimmed) {
+      setPasswordChangeError("Enter a new password.");
+      return;
+    }
+    if (trimmed.length > MAX_STUDENT_PASSWORD_LENGTH) {
+      setPasswordChangeError(`Password must be ${MAX_STUDENT_PASSWORD_LENGTH} characters or fewer.`);
+      return;
+    }
+    if (trimmed !== confirmed) {
+      setPasswordChangeError("New password and confirmation do not match.");
+      return;
+    }
+    if (trimmed === selectedStudent.studentId) {
+      setPasswordChangeError("That is already this student's password.");
+      return;
+    }
+
+    setIsUpdatingStudentPassword(true);
+    try {
+      await updateStudentPasswordByTeacher({
+        teacherId: authenticatedTeacherId,
+        studentId: selectedStudentId,
+        newPassword: trimmed,
+      });
+      setNewStudentPassword("");
+      setConfirmStudentPassword("");
+      setShowStudentPassword(false);
+      setPasswordChangeSuccess(
+        `${selectedStudent.name} was notified in the student portal. Check your notifications for confirmation.`,
+      );
+    } catch (error) {
+      setPasswordChangeError(error instanceof Error ? error.message : "Could not update password.");
+    } finally {
+      setIsUpdatingStudentPassword(false);
+    }
+  }
 
   async function handleSaveRosterEntryDisplayName(
     rosterEntryId: Id<"classRosterEntries">,

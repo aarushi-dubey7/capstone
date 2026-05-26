@@ -17,12 +17,20 @@ export default function StudentPortal() {
   );
   const locations = useQuery(api.locations.list);
   const markPresent = useMutation(api.attendance.markPresent);
+  const studentNotifications = useQuery(
+    api.studentNotifications.listForStudent,
+    student?._id ? { studentId: student._id } : "skip",
+  );
+  const markStudentNotificationRead = useMutation(api.studentNotifications.markAsRead);
 
   const [state, setState] = useState<CheckState>("idle");
   const [message, setMessage] = useState("");
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
+
+  const unreadNotifications =
+    studentNotifications?.filter((notification) => !notification.read) ?? [];
 
   // Close popover on outside click
   useEffect(() => {
@@ -167,6 +175,29 @@ export default function StudentPortal() {
           </p>
           <h1 className="text-3xl font-bold text-white mt-1">Hi, {student.name.split(" ")[0]}</h1>
         </div>
+
+        {unreadNotifications.length > 0 && (
+          <div className="space-y-2 text-left">
+            {unreadNotifications.map((notification) => (
+              <div
+                key={notification._id.toString()}
+                className="rounded-2xl border border-amber-200/40 bg-amber-50/95 px-4 py-3 text-sm text-amber-950 shadow-lg dark:border-amber-400/30 dark:bg-amber-950/80 dark:text-amber-100"
+              >
+                <p className="font-semibold">
+                  {notification.type === "password_changed" ? "Password updated" : "Notice"}
+                </p>
+                <p className="mt-1 leading-relaxed">{notification.message}</p>
+                <button
+                  type="button"
+                  onClick={() => void markStudentNotificationRead({ id: notification._id })}
+                  className="mt-3 text-xs font-semibold uppercase tracking-wide text-amber-800 underline hover:text-amber-950 dark:text-amber-200 dark:hover:text-white"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {state === "idle" && (
           <button

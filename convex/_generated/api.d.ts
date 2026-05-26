@@ -20,6 +20,7 @@ import type * as officeEmails from "../officeEmails.js";
 import type * as scheduleRotation from "../scheduleRotation.js";
 import type * as scheduledActivities from "../scheduledActivities.js";
 import type * as schedules from "../schedules.js";
+import type * as studentNotifications from "../studentNotifications.js";
 import type * as students from "../students.js";
 import type * as teacherClasses from "../teacherClasses.js";
 import type * as teachers from "../teachers.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   scheduleRotation: typeof scheduleRotation;
   scheduledActivities: typeof scheduledActivities;
   schedules: typeof schedules;
+  studentNotifications: typeof studentNotifications;
   students: typeof students;
   teacherClasses: typeof teacherClasses;
   teachers: typeof teachers;
