@@ -240,6 +240,7 @@ function AuthPanel({
   onSubmit: () => void;
   loading: boolean;
 }) {
+  const [showPassword, setShowPassword] = useState(false);
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-12">
       <div className="mx-auto max-w-md">
@@ -296,13 +297,32 @@ function AuthPanel({
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="At least 6 characters"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="At least 6 characters"
+                  className="w-full rounded-xl border border-slate-300 pl-4 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 focus:outline-none"
+                >
+                  {showPassword ? (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 113.833 3.833M15.216 14.5a3 3 0 11-4.716-4.716" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
 
             {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
@@ -1881,17 +1901,20 @@ export default function TeacherDashboard() {
     );
   }
 
+  const teacherFieldInputClass =
+    "rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-400";
+
   function renderManualRosterSection() {
     return (
       <div className="card space-y-4">
-        <h3 className="text-lg font-semibold text-slate-900">Manual Roster Add</h3>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Manual Roster Add</h3>
         <div className="grid gap-3 lg:grid-cols-[1fr,280px,auto]">
           <input
             type="text"
             value={manualEntryName}
             onChange={(event) => setManualEntryName(event.target.value)}
             placeholder="Student display name"
-            className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className={teacherFieldInputClass}
           />
           <div className="space-y-2">
             <input
@@ -1905,17 +1928,11 @@ export default function TeacherDashboard() {
                 );
                 setManualLinkedStudentId(exactMatch?._id.toString() ?? "");
               }}
-              list="manual-roster-student-options"
               placeholder="Search student name"
-              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className={`w-full ${teacherFieldInputClass}`}
             />
-            <datalist id="manual-roster-student-options">
-              {allStudentOptions.map((student) => (
-                <option key={student._id.toString()} value={manualLinkedStudentLabelById[student._id.toString()]} />
-              ))}
-            </datalist>
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 dark:text-slate-400">
                 {manualLinkedStudentId
                   ? `Linked to ${manualLinkedStudentLabelById[manualLinkedStudentId]}`
                   : "Type a student's name to search, or leave blank for no linked account."}
@@ -1927,14 +1944,14 @@ export default function TeacherDashboard() {
                     setManualLinkedStudentId("");
                     setManualLinkedStudentQuery("");
                   }}
-                  className="shrink-0 text-xs font-semibold text-slate-500 underline hover:text-slate-700"
+                  className="shrink-0 text-xs font-semibold text-slate-500 underline hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
                 >
                   Clear
                 </button>
               )}
             </div>
             {!manualLinkedStudentId && manualLinkedStudentQuery.trim() && (
-              <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+              <div className="student-search-menu rounded-xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-600 dark:bg-slate-950">
                 {manualLinkedStudentOptions.length > 0 ? (
                   manualLinkedStudentOptions.map((student) => {
                     const label = manualLinkedStudentLabelById[student._id.toString()];
@@ -1946,18 +1963,18 @@ export default function TeacherDashboard() {
                           setManualLinkedStudentId(student._id.toString());
                           setManualLinkedStudentQuery(label);
                         }}
-                        className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-slate-50"
+                        className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none dark:hover:bg-slate-700 dark:focus-visible:bg-slate-700"
                       >
                         <div className="flex flex-col">
-                          <span className="font-semibold text-slate-700">{student.name.split(" ")[0]}</span>
-                          <span className="text-xs text-slate-400">{student.name}</span>
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">{student.name.split(" ")[0]}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-400">{student.name}</span>
                         </div>
-                        <span className="text-xs font-medium text-slate-500">Grade {student.grade ?? "—"}</span>
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Grade {student.grade ?? "—"}</span>
                       </button>
                     );
                   })
                 ) : (
-                  <div className="px-2 py-2 text-xs text-slate-400">No students match that search.</div>
+                  <div className="px-2 py-2 text-xs text-slate-400 dark:text-slate-400">No students match that search.</div>
                 )}
               </div>
             )}
@@ -2040,10 +2057,10 @@ export default function TeacherDashboard() {
                               }));
                             }}
                             placeholder="Search student name..."
-                            className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 w-64"
+                            className={`w-64 px-3 py-2 ${teacherFieldInputClass}`}
                           />
                           {!linkSelections[entry._id.toString()] && (rosterLinkQueries[entry._id.toString()] ?? "").trim() && (
-                            <div className="absolute left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg w-64">
+                            <div className="student-search-menu absolute left-0 right-0 z-20 mt-1 max-h-48 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-600 dark:bg-slate-950">
                               {(() => {
                                 const term = (rosterLinkQueries[entry._id.toString()] ?? "").trim().toLowerCase();
                                 const filtered = allStudentOptions.filter((student) => {
@@ -2066,17 +2083,17 @@ export default function TeacherDashboard() {
                                           [entry._id.toString()]: student.name,
                                         }));
                                       }}
-                                      className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-slate-50"
+                                      className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none dark:hover:bg-slate-700 dark:focus-visible:bg-slate-700"
                                     >
                                       <div className="flex flex-col">
-                                        <span className="font-semibold text-slate-700">{student.name.split(" ")[0]}</span>
-                                        <span className="text-xs text-slate-400">{student.name}</span>
+                                        <span className="font-semibold text-slate-700 dark:text-slate-200">{student.name.split(" ")[0]}</span>
+                                        <span className="text-xs text-slate-400 dark:text-slate-400">{student.name}</span>
                                       </div>
-                                      <span className="text-xs font-medium text-slate-500">Grade {student.grade ?? "—"}</span>
+                                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Grade {student.grade ?? "—"}</span>
                                     </button>
                                   ))
                                 ) : (
-                                  <div className="px-2 py-2 text-xs text-slate-400">No students match that search.</div>
+                                  <div className="px-2 py-2 text-xs text-slate-400 dark:text-slate-400">No students match that search.</div>
                                 );
                               })()}
                             </div>

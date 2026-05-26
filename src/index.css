@@ -266,6 +266,35 @@ header.bg-brand-900 {
   opacity: 1;
 }
 
+/* Light hover backgrounds are unreadable with forced light text in dark mode */
+.dark .hover\:bg-slate-50:hover {
+  background-color: #334155 !important;
+}
+
+.dark .student-search-menu {
+  background-color: #0f172a !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark .student-search-menu button:hover,
+.dark .student-search-menu button:focus-visible {
+  background-color: #334155 !important;
+}
+
+.dark .student-search-menu button:hover .text-slate-700,
+.dark .student-search-menu button:hover .text-slate-900,
+.dark .student-search-menu button:focus-visible .text-slate-700,
+.dark .student-search-menu button:focus-visible .text-slate-900 {
+  color: #f8fafc !important;
+}
+
+.dark .student-search-menu button:hover .text-slate-400,
+.dark .student-search-menu button:hover .text-slate-500,
+.dark .student-search-menu button:focus-visible .text-slate-400,
+.dark .student-search-menu button:focus-visible .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+
 .dark input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(0.9);
 }
