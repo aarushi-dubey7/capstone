@@ -4,6 +4,8 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { getStoredStudentId, setStoredStudentId } from "../hooks/useStudent";
 
+const MAX_STUDENT_ID_LENGTH = 7;
+
 export default function Home() {
   const navigate = useNavigate();
   const storedId = getStoredStudentId();
@@ -32,6 +34,10 @@ export default function Home() {
   function handleLoginCheck() {
     if (!loginEmail.trim() || !loginStudentId.trim()) {
       setLoginError("Please fill in both fields.");
+      return;
+    }
+    if (loginStudentId.trim().length > MAX_STUDENT_ID_LENGTH) {
+      setLoginError(`Password must be ${MAX_STUDENT_ID_LENGTH} characters or fewer.`);
       return;
     }
     setLoginError("");
@@ -89,7 +95,7 @@ export default function Home() {
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-2xl space-y-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Welcome Back</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Log in with your school email and student ID</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Log in with your school email and password</p>
             </div>
 
             <div>
@@ -109,14 +115,22 @@ export default function Home() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Student ID</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
               <input
                 type="text"
                 value={loginStudentId}
-                onChange={(e) => { setLoginStudentId(e.target.value); setLoginError(""); setSubmitted(false); }}
+                onChange={(e) => {
+                  setLoginStudentId(e.target.value.slice(0, MAX_STUDENT_ID_LENGTH));
+                  setLoginError("");
+                  setSubmitted(false);
+                }}
+                maxLength={MAX_STUDENT_ID_LENGTH}
                 placeholder="123456"
                 className="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                Up to {MAX_STUDENT_ID_LENGTH} characters.
+              </p>
             </div>
 
             {loginError && (

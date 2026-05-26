@@ -4,6 +4,8 @@ import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { setStoredStudentId } from "../hooks/useStudent";
 
+const MAX_STUDENT_ID_LENGTH = 7;
+
 export default function Onboarding() {
   const navigate = useNavigate();
   const [done, setDone] = useState(false);
@@ -13,15 +15,24 @@ export default function Onboarding() {
   const [studentId, setStudentId] = useState("");
   const [emailPrefix, setEmailPrefix] = useState("");
   const [grade, setGrade] = useState("8");
+  const [error, setError] = useState("");
 
   // Convex
   const registerStudent = useMutation(api.students.register);
 
   async function handleSubmit() {
+    const trimmedStudentId = studentId.trim();
+
     if (!name.trim() || !studentId.trim() || !emailPrefix.trim()) return;
+    if (trimmedStudentId.length > MAX_STUDENT_ID_LENGTH) {
+      setError(`Password must be ${MAX_STUDENT_ID_LENGTH} characters or fewer.`);
+      return;
+    }
+
     const email = `${emailPrefix.trim().toLowerCase()}@bhpsnj.org`;
-    await registerStudent({ name: name.trim(), studentId: studentId.trim(), email, role: "student", grade });
-    setStoredStudentId(studentId.trim());
+    await registerStudent({ name: name.trim(), studentId: trimmedStudentId, email, role: "student", grade });
+    setStoredStudentId(trimmedStudentId);
+    setError("");
     setDone(true);
   }
 
@@ -65,14 +76,21 @@ export default function Onboarding() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Student ID</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
                 <input
                   type="text"
                   value={studentId}
-                  onChange={(e) => setStudentId(e.target.value)}
+                  onChange={(e) => {
+                    setStudentId(e.target.value.slice(0, MAX_STUDENT_ID_LENGTH));
+                    setError("");
+                  }}
+                  maxLength={MAX_STUDENT_ID_LENGTH}
                   placeholder="123456"
                   className="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  Up to {MAX_STUDENT_ID_LENGTH} characters.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">School Email</label>
@@ -111,6 +129,11 @@ export default function Onboarding() {
                   ))}
                 </div>
               </div>
+              {error && (
+                <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-xl px-4 py-2.5">
+                  {error}
+                </p>
+              )}
               <button
                 onClick={handleSubmit}
                 disabled={!name.trim() || !studentId.trim() || !emailPrefix.trim()}

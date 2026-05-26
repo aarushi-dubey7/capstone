@@ -165,10 +165,11 @@ export default defineSchema({
 
   notifications: defineTable({
     teacherId: v.id("teachers"),
-    studentId: v.id("students"),
+    studentId: v.optional(v.id("students")),
     date: v.string(),
     message: v.string(),
     type: v.union(v.literal("activity_recommendation"), v.literal("general")),
+    dedupeKey: v.optional(v.string()),
     read: v.boolean(),
     createdAt: v.number(),
   })
@@ -184,5 +185,8 @@ export default defineSchema({
   attendanceSettings: defineTable({
     tardyThreshold: v.number(),
     reminderMinutesAfterStart: v.number(),
+    attendanceReminderEnabled: v.optional(v.boolean()),
+    followUpReminderMinutesAfterFirst: v.optional(v.number()),
+    manualReminderTimes: v.optional(v.array(v.string())),
   }),
 });

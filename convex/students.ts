@@ -1,6 +1,8 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+const MAX_STUDENT_ID_LENGTH = 7;
+
 function localDateString(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -16,6 +18,16 @@ function formatActivityWithBlock(activity: { activityLabel: string; block?: stri
   return activity.block ? `${activity.activityLabel} · Block ${activity.block}` : activity.activityLabel;
 }
 
+function normalizeStudentId(studentId: string) {
+  return studentId.trim();
+}
+
+function assertStudentIdLength(studentId: string) {
+  if (studentId.length > MAX_STUDENT_ID_LENGTH) {
+    throw new Error(`Password must be ${MAX_STUDENT_ID_LENGTH} characters or fewer.`);
+  }
+}
+
 export const register = mutation({
   args: {
     name: v.string(),
@@ -25,21 +37,27 @@ export const register = mutation({
     grade: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const studentId = normalizeStudentId(args.studentId);
+    assertStudentIdLength(studentId);
+
     const existing = await ctx.db
       .query("students")
-      .withIndex("by_studentId", (q) => q.eq("studentId", args.studentId))
+      .withIndex("by_studentId", (q) => q.eq("studentId", studentId))
       .first();
     if (existing) return existing._id;
-    return ctx.db.insert("students", { ...args, createdAt: Date.now() });
+    return ctx.db.insert("students", { ...args, studentId, createdAt: Date.now() });
   },
 });
 
 export const getByStudentId = query({
   args: { studentId: v.string() },
   handler: async (ctx, { studentId }) => {
+    const normalizedStudentId = normalizeStudentId(studentId);
+    assertStudentIdLength(normalizedStudentId);
+
     return ctx.db
       .query("students")
-      .withIndex("by_studentId", (q) => q.eq("studentId", studentId))
+      .withIndex("by_studentId", (q) => q.eq("studentId", normalizedStudentId))
       .first();
   },
 });
@@ -50,9 +68,12 @@ export const login = query({
     studentId: v.string(),
   },
   handler: async (ctx, { email, studentId }) => {
+    const normalizedStudentId = normalizeStudentId(studentId);
+    assertStudentIdLength(normalizedStudentId);
+
     const student = await ctx.db
       .query("students")
-      .withIndex("by_studentId", (q) => q.eq("studentId", studentId))
+      .withIndex("by_studentId", (q) => q.eq("studentId", normalizedStudentId))
       .first();
     if (!student) return null;
     if (!student.email || student.email.toLowerCase() !== email.toLowerCase()) {

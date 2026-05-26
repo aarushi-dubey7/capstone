@@ -3,7 +3,8 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 
 const DEFAULT_TARDY_THRESHOLD = 3;
-const DEFAULT_REMINDER_MINUTES = 15;
+const DEFAULT_REMINDER_MINUTES = 1;
+const DEFAULT_FOLLOW_UP_REMINDER_MINUTES = 1;
 const VALID_CLASS_BLOCKS = ["A", "B", "C", "D", "E", "F", "G", "H", "EP1", "EP2"] as const;
 const ROTATION_DAY_SLOTS = {
   "Day 1": ["A", "B", "C", "EP 1/Lunch", "EP 2/Lunch", "E", "F", "G"],
@@ -88,11 +89,105 @@ function activityAppliesToBlock(
 
 async function loadSettings(ctx: QueryCtx | MutationCtx) {
   const settings = await ctx.db.query("attendanceSettings").first();
-  return settings ?? {
-    _id: "default" as Id<"attendanceSettings">,
-    _creationTime: 0,
-    tardyThreshold: DEFAULT_TARDY_THRESHOLD,
-    reminderMinutesAfterStart: DEFAULT_REMINDER_MINUTES,
+  return {
+    _id: settings?._id ?? ("default" as Id<"attendanceSettings">),
+    _creationTime: settings?._creationTime ?? 0,
+    tardyThreshold: settings?.tardyThreshold ?? DEFAULT_TARDY_THRESHOLD,
+    reminderMinutesAfterStart: settings?.reminderMinutesAfterStart ?? DEFAULT_REMINDER_MINUTES,
+    attendanceReminderEnabled: settings?.attendanceReminderEnabled ?? true,
+    followUpReminderMinutesAfterFirst:
+      settings?.followUpReminderMinutesAfterFirst ?? DEFAULT_FOLLOW_UP_REMINDER_MINUTES,
+    manualReminderTimes: settings?.manualReminderTimes ?? [],
+  };
+}
+
+function formatReminderMinuteLabel(value: number) {
+  return `${value} minute${value === 1 ? "" : "s"}`;
+}
+
+async function getTeacherUnresolvedCount(
+  ctx: QueryCtx | MutationCtx,
+  args: {
+    teacherId: Id<"teachers">;
+    date: string;
+    blockLabel?: string;
+  },
+) {
+  const settings = await loadSettings(ctx);
+  const assignmentContext = await getTeacherAssignmentContext(ctx, {
+    teacherId: args.teacherId,
+    date: args.date,
+    blockLabel: args.blockLabel,
+  });
+
+  if (!assignmentContext.activeClass) {
+    return {
+      settings,
+      assignmentContext,
+      unresolvedCount: 0,
+    };
+  }
+
+  const rosterEntries = await ctx.db
+    .query("classRosterEntries")
+    .withIndex("by_classId", (q) => q.eq("classId", assignmentContext.activeClass!._id))
+    .collect();
+  const linkedEntries = rosterEntries.filter((entry) => entry.linkedStudentId);
+  const linkedStudents = (
+    await Promise.all(linkedEntries.map((entry) => ctx.db.get(entry.linkedStudentId!)))
+  ).filter((student): student is NonNullable<typeof student> => student !== null && student.role === "student");
+
+  const studentIds = new Set(linkedStudents.map((student) => student._id.toString()));
+  const activeBlockCode = normalizeClassBlock(
+    assignmentContext.activeClass.block ?? assignmentContext.selectedBlockLabel,
+  );
+
+  const [statusDocs, scheduledActivities, allLogsByStudent] = await Promise.all([
+    ctx.db
+      .query("attendanceStatus")
+      .withIndex("by_date_and_status", (q) => q.eq("date", args.date))
+      .collect(),
+    ctx.db
+      .query("scheduledActivities")
+      .withIndex("by_date", (q) => q.eq("date", args.date))
+      .collect(),
+    Promise.all(
+      linkedStudents.map(async (student) => ({
+        studentId: student._id.toString(),
+        logs: await ctx.db
+          .query("logs")
+          .withIndex("by_student_date", (q) => q.eq("studentId", student._id).eq("date", args.date))
+          .collect(),
+      })),
+    ),
+  ]);
+
+  const filteredStatuses = statusDocs.filter((status) => studentIds.has(status.studentId.toString()));
+  const filteredActivities = scheduledActivities.filter(
+    (activity) =>
+      studentIds.has(activity.studentId.toString()) &&
+      activityAppliesToBlock(activity, activeBlockCode),
+  );
+  const statusByStudent = new Map(filteredStatuses.map((status) => [status.studentId.toString(), status]));
+  const activityByStudent = new Map(filteredActivities.map((activity) => [activity.studentId.toString(), activity]));
+  const todayLogs = allLogsByStudent.flatMap((entry) => entry.logs);
+  const latestLogs = latestByStudent(todayLogs);
+
+  const unresolvedCount = linkedStudents.reduce((count, student) => {
+    const key = student._id.toString();
+    const explicit = statusByStudent.get(key) ?? null;
+    const scheduledActivity = activityByStudent.get(key) ?? null;
+    const latestLog = latestLogs.get(key) ?? null;
+    const status: AttendanceStatus =
+      explicit?.status ??
+      (scheduledActivity ? "activity" : latestLog ? "present" : "unresolved");
+    return count + (status === "unresolved" ? 1 : 0);
+  }, 0);
+
+  return {
+    settings,
+    assignmentContext,
+    unresolvedCount,
   };
 }
 
@@ -304,10 +399,13 @@ export const getLiveLocations = query({
 export const getSettings = query({
   args: {},
   handler: async (ctx) => {
-    const settings = await ctx.db.query("attendanceSettings").first();
-    return settings ?? {
-      tardyThreshold: DEFAULT_TARDY_THRESHOLD,
-      reminderMinutesAfterStart: DEFAULT_REMINDER_MINUTES,
+    const settings = await loadSettings(ctx);
+    return {
+      tardyThreshold: settings.tardyThreshold,
+      reminderMinutesAfterStart: settings.reminderMinutesAfterStart,
+      attendanceReminderEnabled: settings.attendanceReminderEnabled,
+      followUpReminderMinutesAfterFirst: settings.followUpReminderMinutesAfterFirst,
+      manualReminderTimes: settings.manualReminderTimes,
     };
   },
 });
@@ -316,6 +414,9 @@ export const updateSettings = mutation({
   args: {
     tardyThreshold: v.optional(v.number()),
     reminderMinutesAfterStart: v.optional(v.number()),
+    attendanceReminderEnabled: v.optional(v.boolean()),
+    followUpReminderMinutesAfterFirst: v.optional(v.number()),
+    manualReminderTimes: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db.query("attendanceSettings").first();
@@ -323,6 +424,13 @@ export const updateSettings = mutation({
       tardyThreshold: args.tardyThreshold ?? existing?.tardyThreshold ?? DEFAULT_TARDY_THRESHOLD,
       reminderMinutesAfterStart:
         args.reminderMinutesAfterStart ?? existing?.reminderMinutesAfterStart ?? DEFAULT_REMINDER_MINUTES,
+      attendanceReminderEnabled:
+        args.attendanceReminderEnabled ?? existing?.attendanceReminderEnabled ?? true,
+      followUpReminderMinutesAfterFirst:
+        args.followUpReminderMinutesAfterFirst ??
+        existing?.followUpReminderMinutesAfterFirst ??
+        DEFAULT_FOLLOW_UP_REMINDER_MINUTES,
+      manualReminderTimes: args.manualReminderTimes ?? existing?.manualReminderTimes ?? [],
     };
 
     if (existing) {
@@ -331,6 +439,103 @@ export const updateSettings = mutation({
     }
 
     return ctx.db.insert("attendanceSettings", next);
+  },
+});
+
+export const ensureTeacherAttendanceNotifications = mutation({
+  args: {
+    teacherId: v.id("teachers"),
+    date: v.optional(v.string()),
+    blockLabel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const targetDate = args.date ?? localDateString();
+    const now = new Date();
+    if (targetDate !== localDateString(now)) {
+      return { created: [] as string[] };
+    }
+
+    const { settings, assignmentContext, unresolvedCount } = await getTeacherUnresolvedCount(ctx, {
+      teacherId: args.teacherId,
+      date: targetDate,
+      blockLabel: args.blockLabel,
+    });
+
+    if (!settings.attendanceReminderEnabled || !assignmentContext.activeClass || unresolvedCount === 0) {
+      return { created: [] as string[] };
+    }
+
+    const activeBlockDef =
+      assignmentContext.selectedBlockLabel === null
+        ? null
+        : assignmentContext.bellSchedule?.blocks.find(
+            (block) => block.label === assignmentContext.selectedBlockLabel,
+          ) ?? null;
+    if (!activeBlockDef) {
+      return { created: [] as string[] };
+    }
+
+    const startMinutes = parseTimeToMinutes(activeBlockDef.start);
+    if (startMinutes === null) {
+      return { created: [] as string[] };
+    }
+
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const firstReminderCutoff = startMinutes + settings.reminderMinutesAfterStart;
+    const secondReminderCutoff =
+      firstReminderCutoff + settings.followUpReminderMinutesAfterFirst;
+    const existingNotifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_teacher_date", (q) => q.eq("teacherId", args.teacherId).eq("date", targetDate))
+      .collect();
+    const created: string[] = [];
+    const blockLabel = assignmentContext.selectedBlockLabel ?? activeBlockDef.label;
+    const className = assignmentContext.activeClass.name;
+    const baseKey = `${targetDate}:${assignmentContext.activeClass._id.toString()}:${blockLabel}`;
+
+    const maybeCreateReminder = async (stage: string, message: string) => {
+      const dedupeKey = `attendance_reminder:${stage}:${baseKey}`;
+      if (existingNotifications.some((notification) => notification.dedupeKey === dedupeKey)) {
+        return;
+      }
+      await ctx.db.insert("notifications", {
+        teacherId: args.teacherId,
+        date: targetDate,
+        message,
+        type: "general",
+        dedupeKey,
+        read: false,
+        createdAt: Date.now(),
+      });
+      created.push(dedupeKey);
+    };
+
+    if (nowMinutes >= firstReminderCutoff) {
+      await maybeCreateReminder(
+        "first",
+        `${className} started ${formatReminderMinuteLabel(settings.reminderMinutesAfterStart)} ago for ${blockLabel}. ${unresolvedCount} student${unresolvedCount === 1 ? "" : "s"} still need attendance.`,
+      );
+    }
+
+    if (nowMinutes >= secondReminderCutoff) {
+      await maybeCreateReminder(
+        "follow_up",
+        `Follow-up reminder for ${className}: ${unresolvedCount} student${unresolvedCount === 1 ? "" : "s"} still need attendance for ${blockLabel}.`,
+      );
+    }
+
+    for (const manualTime of settings.manualReminderTimes) {
+      const match = manualTime.match(/^(\d{2}):(\d{2})$/);
+      if (!match) continue;
+      const manualMinutes = Number(match[1]) * 60 + Number(match[2]);
+      if (nowMinutes < manualMinutes) continue;
+      await maybeCreateReminder(
+        `manual_${manualTime}`,
+        `Take Attendance Now! ${className} still has ${unresolvedCount} student${unresolvedCount === 1 ? "" : "s"} needing attendance for ${blockLabel}.`,
+      );
+    }
+
+    return { created };
   },
 });
 
@@ -514,6 +719,9 @@ export const getRoster = query({
       settings: {
         tardyThreshold: settings.tardyThreshold,
         reminderMinutesAfterStart: settings.reminderMinutesAfterStart,
+        attendanceReminderEnabled: settings.attendanceReminderEnabled,
+        followUpReminderMinutesAfterFirst: settings.followUpReminderMinutesAfterFirst,
+        manualReminderTimes: settings.manualReminderTimes,
       },
       summary,
       shouldShowReminder,
@@ -698,6 +906,9 @@ export const getTeacherRoster = query({
       settings: {
         tardyThreshold: settings.tardyThreshold,
         reminderMinutesAfterStart: settings.reminderMinutesAfterStart,
+        attendanceReminderEnabled: settings.attendanceReminderEnabled,
+        followUpReminderMinutesAfterFirst: settings.followUpReminderMinutesAfterFirst,
+        manualReminderTimes: settings.manualReminderTimes,
       },
       blockOptions: assignmentContext.blockOptions,
       selectedBlockLabel: assignmentContext.selectedBlockLabel,

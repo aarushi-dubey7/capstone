@@ -351,7 +351,24 @@ export default function TeacherDashboard() {
   const [editingScheduledActivityId, setEditingScheduledActivityId] = useState<Id<"scheduledActivities"> | null>(null);
   const [quickActivityStudentId, setQuickActivityStudentId] = useState<Id<"students"> | null>(null);
   const [quickActivityLabel, setQuickActivityLabel] = useState("");
-  const [settingsForm, setSettingsForm] = useState({ tardyThreshold: "3", reminderMinutesAfterStart: "15" });
+  const [settingsForm, setSettingsForm] = useState({
+    tardyThreshold: "3",
+    reminderMinutesAfterStart: "1",
+    attendanceReminderEnabled: true,
+    followUpReminderMinutesAfterFirst: "1",
+    manualReminderTimes: [] as string[],
+  });
+  const [attendanceSettingsMessage, setAttendanceSettingsMessage] = useState<{
+    text: string;
+    type: "success" | "error" | "info";
+  }>({
+    text: "",
+    type: "info",
+  });
+  const [notificationToast, setNotificationToast] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
   const [editingRotation, setEditingRotation] = useState(false);
   const [rotationLabel, setRotationLabel] = useState("");
   const [selectedBellType, setSelectedBellType] = useState("Standard");
@@ -384,6 +401,7 @@ export default function TeacherDashboard() {
   const [newClassForm, setNewClassForm] = useState(emptyClassForm);
   const [manualEntryName, setManualEntryName] = useState("");
   const [manualLinkedStudentId, setManualLinkedStudentId] = useState("");
+  const [manualLinkedStudentQuery, setManualLinkedStudentQuery] = useState("");
   const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteError, setDeleteError] = useState("");
@@ -395,6 +413,8 @@ export default function TeacherDashboard() {
   const [rosterParseError, setRosterParseError] = useState("");
   const [isParsingRoster, setIsParsingRoster] = useState(false);
   const [isRosterDragActive, setIsRosterDragActive] = useState(false);
+  const shownBrowserNotificationIdsRef = useRef<Set<string>>(new Set());
+  const [manualReminderTimeInput, setManualReminderTimeInput] = useState("");
 
   const teacherEmail = authEmailPrefix.trim() ? `${authEmailPrefix.trim().toLowerCase()}@bhpsnj.org` : "";
   const isSettingsPage = location.pathname === "/teacher/settings";
@@ -469,6 +489,7 @@ export default function TeacherDashboard() {
   const setStudentStatus = useMutation(api.attendance.setStudentStatus);
   const batchMarkClassUnresolvedAbsent = useMutation(api.attendance.batchMarkClassUnresolvedAbsent);
   const updateSettings = useMutation(api.attendance.updateSettings);
+  const ensureTeacherAttendanceNotifications = useMutation(api.attendance.ensureTeacherAttendanceNotifications);
   const sendToMainOffice = useAction(api.attendanceReport.sendToMainOffice);
   const officeEmails = useQuery(api.officeEmails.list) ?? [];
   const addOfficeEmail = useMutation(api.officeEmails.add);
@@ -480,6 +501,7 @@ export default function TeacherDashboard() {
   const removeScheduledActivity = useMutation(api.scheduledActivities.remove);
   const markNotificationRead = useMutation(api.notifications.markAsRead);
   const markAllNotificationsRead = useMutation(api.notifications.markAllAsRead);
+  const createTestNotification = useMutation(api.notifications.createTestNotification);
   const removeStudent = useMutation(api.students.remove);
   const parseRosterImage = useAction(api.groq.parseRosterImage);
   const initBellSchedules = useMutation(api.bellSchedules.initialize);
@@ -590,9 +612,57 @@ export default function TeacherDashboard() {
       setSettingsForm({
         tardyThreshold: String(teacherRoster.settings.tardyThreshold),
         reminderMinutesAfterStart: String(teacherRoster.settings.reminderMinutesAfterStart),
+        attendanceReminderEnabled: teacherRoster.settings.attendanceReminderEnabled,
+        followUpReminderMinutesAfterFirst: String(teacherRoster.settings.followUpReminderMinutesAfterFirst),
+        manualReminderTimes: teacherRoster.settings.manualReminderTimes,
       });
     }
   }, [teacherRoster?.settings]);
+
+  useEffect(() => {
+    if (!notifications) return;
+
+    for (const notification of notifications) {
+      const id = notification._id.toString();
+      if (notification.read || shownBrowserNotificationIdsRef.current.has(id)) continue;
+      if (notification.type !== "general") continue;
+
+      shownBrowserNotificationIdsRef.current.add(id);
+      const title = notification.message === "Take Attendance Now!" ? "Take Attendance Now!" : "Attendance Reminder";
+      const body =
+        notification.message === "Take Attendance Now!"
+          ? "This is a test attendance reminder."
+          : notification.message;
+
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body });
+      }
+
+      setNotificationToast({ title, body });
+    }
+  }, [notifications]);
+
+  useEffect(() => {
+    if (!notificationToast) return;
+    const timeoutId = window.setTimeout(() => setNotificationToast(null), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [notificationToast]);
+
+  useEffect(() => {
+    if (!authenticatedTeacherId) return;
+
+    const syncNotifications = () => {
+      void ensureTeacherAttendanceNotifications({
+        teacherId: authenticatedTeacherId,
+        date: todayStr(),
+        blockLabel: selectedBlockLabel || undefined,
+      });
+    };
+
+    syncNotifications();
+    const intervalId = window.setInterval(syncNotifications, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [authenticatedTeacherId, ensureTeacherAttendanceNotifications, selectedBlockLabel]);
 
   useEffect(() => {
     if (!teacherRoster) return;
@@ -620,6 +690,25 @@ export default function TeacherDashboard() {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [allStudents],
   );
+
+  const manualLinkedStudentLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        allStudentOptions.map((student) => [student._id.toString(), `${student.name} · ${student.studentId}`]),
+      ) as Record<string, string>,
+    [allStudentOptions],
+  );
+
+  const manualLinkedStudentOptions = useMemo(() => {
+    const term = manualLinkedStudentQuery.trim().toLowerCase();
+    if (!term) return [];
+    return allStudentOptions
+      .filter((student) => {
+        const haystack = `${student.name} ${student.studentId} ${student.email ?? ""} ${student.grade ?? ""}`.toLowerCase();
+        return haystack.includes(term);
+      })
+      .slice(0, 8);
+  }, [allStudentOptions, manualLinkedStudentQuery]);
 
   const teacherStudentIds = useMemo(
     () => new Set(teacherStudents.map((student) => student._id.toString())),
@@ -1133,6 +1222,7 @@ export default function TeacherDashboard() {
     });
     setManualEntryName("");
     setManualLinkedStudentId("");
+    setManualLinkedStudentQuery("");
   }
 
   async function handleLinkRosterEntry(rosterEntryId: Id<"classRosterEntries">) {
@@ -1272,8 +1362,77 @@ export default function TeacherDashboard() {
   async function saveSettings() {
     await updateSettings({
       tardyThreshold: Number(settingsForm.tardyThreshold) || 3,
-      reminderMinutesAfterStart: Number(settingsForm.reminderMinutesAfterStart) || 15,
+      reminderMinutesAfterStart: Number(settingsForm.reminderMinutesAfterStart) || 1,
+      attendanceReminderEnabled: settingsForm.attendanceReminderEnabled,
+      followUpReminderMinutesAfterFirst: Number(settingsForm.followUpReminderMinutesAfterFirst) || 1,
+      manualReminderTimes: settingsForm.manualReminderTimes,
     });
+    setAttendanceSettingsMessage({ text: "Attendance reminder settings saved.", type: "success" });
+  }
+
+  function addManualReminderTime() {
+    if (!manualReminderTimeInput) return;
+    setSettingsForm((current) => ({
+      ...current,
+      manualReminderTimes: [...new Set([...current.manualReminderTimes, manualReminderTimeInput])].sort(),
+    }));
+    setManualReminderTimeInput("");
+  }
+
+  function removeManualReminderTime(time: string) {
+    setSettingsForm((current) => ({
+      ...current,
+      manualReminderTimes: current.manualReminderTimes.filter((entry) => entry !== time),
+    }));
+  }
+
+  async function requestBrowserNotificationPermission() {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      return false;
+    }
+    if (Notification.permission === "granted") return true;
+    if (Notification.permission === "denied") {
+      throw new Error("Browser notifications are blocked. Enable them in your browser settings to test reminders.");
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      throw new Error("Browser notification permission was not granted.");
+    }
+    return true;
+  }
+
+  async function handleTestAttendanceNotification() {
+    if (!authenticatedTeacherId) return;
+    try {
+      const canUseBrowserNotification = await requestBrowserNotificationPermission();
+      await createTestNotification({
+        teacherId: authenticatedTeacherId,
+        message: "Take Attendance Now!",
+      });
+      if (canUseBrowserNotification && typeof window !== "undefined" && "Notification" in window) {
+        new Notification("Take Attendance Now!", {
+          body: "This is a test attendance reminder.",
+        });
+        setAttendanceSettingsMessage({
+          text: "Test notification sent. Browser reminders will appear while this browser stays open.",
+          type: "success",
+        });
+      } else {
+        setNotificationToast({
+          title: "Take Attendance Now!",
+          body: "This browser does not support native notification popups, so an in-app reminder is shown instead.",
+        });
+        setAttendanceSettingsMessage({
+          text: "This browser does not support native notification popups, so the reminder was shown inside the app instead.",
+          type: "info",
+        });
+      }
+    } catch (error) {
+      setAttendanceSettingsMessage({
+        text: error instanceof Error ? error.message : "Could not send the test notification.",
+        type: "error",
+      });
+    }
   }
 
   function renderBackButton() {
@@ -1677,18 +1836,72 @@ export default function TeacherDashboard() {
             placeholder="Student display name"
             className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
-          <select
-            value={manualLinkedStudentId}
-            onChange={(event) => setManualLinkedStudentId(event.target.value)}
-            className="rounded-xl border border-slate-300 px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="">No linked account yet</option>
-            {allStudentOptions.map((student) => (
-              <option key={student._id.toString()} value={student._id.toString()}>
-                {student.name} · {student.studentId}
-              </option>
-            ))}
-          </select>
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={manualLinkedStudentQuery}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setManualLinkedStudentQuery(nextValue);
+                const exactMatch = allStudentOptions.find(
+                  (student) => manualLinkedStudentLabelById[student._id.toString()] === nextValue,
+                );
+                setManualLinkedStudentId(exactMatch?._id.toString() ?? "");
+              }}
+              list="manual-roster-student-options"
+              placeholder="Search student name"
+              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <datalist id="manual-roster-student-options">
+              {allStudentOptions.map((student) => (
+                <option key={student._id.toString()} value={manualLinkedStudentLabelById[student._id.toString()]} />
+              ))}
+            </datalist>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-400">
+                {manualLinkedStudentId
+                  ? `Linked to ${manualLinkedStudentLabelById[manualLinkedStudentId]}`
+                  : "Type a student's name to search, or leave blank for no linked account."}
+              </p>
+              {manualLinkedStudentId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualLinkedStudentId("");
+                    setManualLinkedStudentQuery("");
+                  }}
+                  className="shrink-0 text-xs font-semibold text-slate-500 underline hover:text-slate-700"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {!manualLinkedStudentId && manualLinkedStudentQuery.trim() && (
+              <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+                {manualLinkedStudentOptions.length > 0 ? (
+                  manualLinkedStudentOptions.map((student) => {
+                    const label = manualLinkedStudentLabelById[student._id.toString()];
+                    return (
+                      <button
+                        key={student._id.toString()}
+                        type="button"
+                        onClick={() => {
+                          setManualLinkedStudentId(student._id.toString());
+                          setManualLinkedStudentQuery(label);
+                        }}
+                        className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-slate-50"
+                      >
+                        <span className="font-medium text-slate-700">{student.name}</span>
+                        <span className="text-xs text-slate-400">{student.studentId}</span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="px-2 py-2 text-xs text-slate-400">No students match that search.</div>
+                )}
+              </div>
+            )}
+          </div>
           <button onClick={handleAddManualRosterEntry} className="btn-primary px-4">
             Add
           </button>
@@ -2193,41 +2406,129 @@ export default function TeacherDashboard() {
           <div className="card space-y-3">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold text-slate-800">Attendance Settings</h3>
-              <InfoTooltip label="Use this section to control when tardy alerts appear and how long the system waits before reminding teachers about unresolved students." />
+              <InfoTooltip label="Use this section to control when teachers get attendance reminders after class starts and when a follow-up reminder should be sent." />
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Tardy Threshold
-                </label>
+            <div className="space-y-4">
+              <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800">Attendance Notifications</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Remind teachers to take attendance after class starts, then send one follow-up reminder if attendance is still incomplete.
+                  </div>
+                </div>
                 <input
-                  type="number"
-                  min="1"
-                  value={settingsForm.tardyThreshold}
+                  type="checkbox"
+                  checked={settingsForm.attendanceReminderEnabled}
                   onChange={(event) =>
-                    setSettingsForm((current) => ({ ...current, tardyThreshold: event.target.value }))
+                    setSettingsForm((current) => ({
+                      ...current,
+                      attendanceReminderEnabled: event.target.checked,
+                    }))
                   }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  className="h-5 w-5 rounded border-slate-300 text-brand-700 focus:ring-brand-500"
                 />
+              </label>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    First Reminder Minutes After Start
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={settingsForm.reminderMinutesAfterStart}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({ ...current, reminderMinutesAfterStart: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Follow-Up Minutes Later
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={settingsForm.followUpReminderMinutesAfterFirst}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        followUpReminderMinutesAfterFirst: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Reminder Minutes After Start
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={settingsForm.reminderMinutesAfterStart}
-                  onChange={(event) =>
-                    setSettingsForm((current) => ({ ...current, reminderMinutesAfterStart: event.target.value }))
-                  }
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <div className="text-sm font-semibold text-slate-800">Manual Reminder Times</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Add custom times when you want a “Take Attendance Now!” reminder.
+                </div>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <input
+                    type="time"
+                    value={manualReminderTimeInput}
+                    onChange={(event) => setManualReminderTimeInput(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={addManualReminderTime}
+                    className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+                  >
+                    Add Time
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {settingsForm.manualReminderTimes.length > 0 ? (
+                    settingsForm.manualReminderTimes.map((time) => (
+                      <button
+                        key={time}
+                        type="button"
+                        onClick={() => removeManualReminderTime(time)}
+                        className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100"
+                      >
+                        {time} ×
+                      </button>
+                    ))
+                  ) : (
+                    <div className="text-sm text-slate-400">No manual reminder times added yet.</div>
+                  )}
+                </div>
               </div>
+
+              {attendanceSettingsMessage.text && (
+                <div
+                  className={`rounded-xl px-4 py-3 text-sm font-medium ${
+                    attendanceSettingsMessage.type === "error"
+                      ? "bg-red-50 text-red-700"
+                      : attendanceSettingsMessage.type === "success"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-blue-50 text-blue-700"
+                  }`}
+                >
+                  {attendanceSettingsMessage.text}
+                </div>
+              )}
             </div>
-            <button onClick={saveSettings} className="btn-primary w-full">
-              Save Settings
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                onClick={saveSettings}
+                className="btn-primary w-full"
+              >
+                Save Settings
+              </button>
+              <button
+                onClick={handleTestAttendanceNotification}
+                className="w-full rounded-2xl border border-slate-300 bg-white px-6 py-4 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
+              >
+                Test Notification
+              </button>
+            </div>
           </div>
 
           <div className="card space-y-3">
@@ -2453,6 +2754,12 @@ export default function TeacherDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-100">
+      {notificationToast && (
+        <div className="fixed right-5 top-24 z-50 w-full max-w-sm rounded-2xl border border-brand-200 bg-white px-5 py-4 shadow-xl">
+          <div className="font-semibold text-slate-900">{notificationToast.title}</div>
+          <div className="mt-1 text-sm text-slate-600">{notificationToast.body}</div>
+        </div>
+      )}
       <header className="bg-brand-900 px-6 py-6 text-white shadow-lg">
         <div className="mx-auto flex max-w-7xl items-start justify-between gap-4">
           <div>

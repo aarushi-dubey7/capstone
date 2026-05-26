@@ -237,7 +237,7 @@ export default function StudentPortal() {
                 <p className="text-white dark:text-slate-100 text-sm font-semibold">{student.email ?? "—"}</p>
               </div>
               <div>
-                <p className="text-white/50 dark:text-slate-400 text-xs font-medium">Student ID</p>
+                <p className="text-white/50 dark:text-slate-400 text-xs font-medium">Password</p>
                 <p className="text-white dark:text-slate-100 text-sm font-semibold font-mono">{student.studentId}</p>
               </div>
             </div>
