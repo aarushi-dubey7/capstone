@@ -19,7 +19,7 @@ type BeaconScanState = "idle" | "scanning" | "connected" | "error";
 type ClassesViewMode = "landing" | "creating" | "createSuccess" | "editing";
 type ClassWorkspaceSection = "details" | "stats" | "rosterUpload" | "manualAdd" | "roster" | "planner";
 type ClassStatsRange = "week" | "month" | "3months";
-type ClassStatsBulkFilter = "present" | "absent" | "excused" | "activity" | "tardy";
+type ClassStatsBulkFilter = "present" | "absent" | "activityExcused" | "unresolved" | "tardy";
 
 const DAY_OPTIONS = ["Day 1", "Day 2", "Day 3", "Day 4"] as const;
 type DayOption = (typeof DAY_OPTIONS)[number];
@@ -225,6 +225,20 @@ function statusLabel(status: string) {
   if (status === "activity") return "Activity";
   if (status === "excused") return "Excused";
   return "Unresolved";
+}
+
+function classStatsStatusBadge(status: string, isTardy: boolean) {
+  if (isTardy) return "bg-violet-100 text-violet-700";
+  if (status === "present") return "bg-emerald-100 text-emerald-700";
+  if (status === "absent") return "bg-red-100 text-red-700";
+  if (status === "activity" || status === "excused") return "bg-sky-100 text-sky-700";
+  return "bg-amber-100 text-amber-800";
+}
+
+function classStatsStatusLabel(status: string, isTardy: boolean) {
+  if (isTardy) return "Tardy";
+  if (status === "activity" || status === "excused") return "Activity / Excused";
+  return statusLabel(status);
 }
 
 function InfoTooltip({ label }: { label: string }) {
@@ -2738,6 +2752,9 @@ export default function TeacherDashboard() {
         .filter((student) => {
           if (!classStatsBulkFilter) return false;
           if (classStatsBulkFilter === "tardy") return student.isLate;
+          if (classStatsBulkFilter === "activityExcused") {
+            return student.status === "activity" || student.status === "excused";
+          }
           return student.status === classStatsBulkFilter;
         })
         .map((student) => ({
@@ -2751,10 +2768,10 @@ export default function TeacherDashboard() {
         ? "Present"
         : classStatsBulkFilter === "absent"
           ? "Absent"
-          : classStatsBulkFilter === "excused"
-            ? "Excused"
-            : classStatsBulkFilter === "activity"
-              ? "Activity"
+          : classStatsBulkFilter === "activityExcused"
+            ? "Activity / Excused"
+            : classStatsBulkFilter === "unresolved"
+              ? "Unresolved"
               : classStatsBulkFilter === "tardy"
                 ? "Tardy"
                 : "";
@@ -2816,19 +2833,19 @@ export default function TeacherDashboard() {
 
           <div className="grid gap-4 md:grid-cols-5">
             <button type="button" onClick={() => setClassStatsBulkFilter("present")} className="text-left">
-              <SummaryCard value={classStats.summary.present} label="Present" tone="text-emerald-600" />
+              <SummaryCard value={classStats.summary.present ?? 0} label="Present" tone="text-emerald-600" />
             </button>
             <button type="button" onClick={() => setClassStatsBulkFilter("absent")} className="text-left">
-              <SummaryCard value={classStats.summary.absent} label="Absent" tone="text-red-600" />
+              <SummaryCard value={classStats.summary.absent ?? 0} label="Absent" tone="text-red-600" />
             </button>
-            <button type="button" onClick={() => setClassStatsBulkFilter("excused")} className="text-left">
-              <SummaryCard value={classStats.summary.excused} label="Excused" tone="text-violet-600" />
+            <button type="button" onClick={() => setClassStatsBulkFilter("activityExcused")} className="text-left">
+              <SummaryCard value={(classStats.summary.activity ?? 0) + (classStats.summary.excused ?? 0)} label="Activity / Excused" tone="text-sky-600" />
             </button>
-            <button type="button" onClick={() => setClassStatsBulkFilter("activity")} className="text-left">
-              <SummaryCard value={classStats.summary.activity} label="Activity" tone="text-sky-600" />
+            <button type="button" onClick={() => setClassStatsBulkFilter("unresolved")} className="text-left">
+              <SummaryCard value={classStats.summary.unresolved ?? 0} label="Unresolved" tone="text-amber-600" />
             </button>
             <button type="button" onClick={() => setClassStatsBulkFilter("tardy")} className="text-left">
-              <SummaryCard value={classStats.summary.tardy} label="Tardy" tone="text-amber-600" />
+              <SummaryCard value={classStats.summary.tardy ?? 0} label="Tardy" tone="text-violet-600" />
             </button>
           </div>
 
@@ -2872,8 +2889,8 @@ export default function TeacherDashboard() {
                         )}
                       </div>
                       <div className="flex flex-col items-start gap-2 lg:items-end">
-                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(entry.student.status)}`}>
-                          {classStatsBulkFilter === "tardy" ? "Tardy" : statusLabel(entry.student.status)}
+                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${classStatsStatusBadge(entry.student.status, classStatsBulkFilter === "tardy")}`}>
+                          {classStatsStatusLabel(entry.student.status, classStatsBulkFilter === "tardy")}
                         </span>
                         <div className="text-xs text-slate-500">
                           {entry.student.latestCheckInTime
@@ -2937,8 +2954,9 @@ export default function TeacherDashboard() {
                         {entry ? (
                           <div className="mt-2 space-y-1 text-[11px]">
                             <div className="text-red-600">{entry.summary.absent} absent</div>
-                            <div className="text-sky-600">{entry.summary.activity} activity</div>
-                            <div className="text-amber-600">{entry.summary.tardy} tardy</div>
+                            <div className="text-sky-600">{entry.summary.activity + entry.summary.excused} activity / excused</div>
+                            <div className="text-amber-600">{entry.summary.unresolved} unresolved</div>
+                            <div className="text-violet-600">{entry.summary.tardy} tardy</div>
                           </div>
                         ) : (
                           <div className="mt-3 text-[11px] text-slate-400">
@@ -2969,9 +2987,9 @@ export default function TeacherDashboard() {
                       <div className="flex flex-wrap gap-2 text-xs font-semibold">
                         <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">{entry.summary.present} present</span>
                         <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">{entry.summary.absent} absent</span>
-                        <span className="rounded-full bg-violet-100 px-3 py-1 text-violet-700">{entry.summary.excused} excused</span>
-                        <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-700">{entry.summary.activity} activity</span>
-                        <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">{entry.summary.tardy} tardy</span>
+                        <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-700">{entry.summary.activity + entry.summary.excused} activity / excused</span>
+                        <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">{entry.summary.unresolved} unresolved</span>
+                        <span className="rounded-full bg-violet-100 px-3 py-1 text-violet-700">{entry.summary.tardy} tardy</span>
                       </div>
                     </div>
                   </button>
@@ -3010,8 +3028,8 @@ export default function TeacherDashboard() {
                           )}
                         </div>
                         <div className="flex flex-col items-start gap-2 lg:items-end">
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(student.status)}`}>
-                            {statusLabel(student.status)}
+                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${classStatsStatusBadge(student.status, student.isLate)}`}>
+                            {classStatsStatusLabel(student.status, student.isLate)}
                           </span>
                           <div className="text-xs text-slate-500">
                             {student.latestCheckInTime ? `${fmt(student.latestCheckInTime)}${student.isLate ? " · Late" : ""}` : "No check-in"}

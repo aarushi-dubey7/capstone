@@ -12,8 +12,8 @@ export default function StudentPortal() {
   const storedId = getStoredStudentId();
 
   const student = useQuery(
-    api.students.getById,
-    storedId ? { id: storedId as Id<"students"> } : "skip"
+    api.students.getByStoredIdentifier,
+    storedId ? { identifier: storedId } : "skip"
   );
   const locations = useQuery(api.locations.list);
   const markPresent = useMutation(api.attendance.markPresent);

@@ -92,6 +92,26 @@ export const getById = query({
   },
 });
 
+export const getByStoredIdentifier = query({
+  args: { identifier: v.string() },
+  handler: async (ctx, { identifier }) => {
+    const normalized = identifier.trim();
+    if (!normalized) return null;
+
+    try {
+      const byId = await ctx.db.get(normalized as Id<"students">);
+      if (byId) return byId;
+    } catch {
+      // Fall through to legacy studentId lookup.
+    }
+
+    return ctx.db
+      .query("students")
+      .withIndex("by_studentId", (q) => q.eq("studentId", normalized))
+      .first();
+  },
+});
+
 export const getByStudentId = query({
   args: { studentId: v.string() },
   handler: async (ctx, { studentId }) => {

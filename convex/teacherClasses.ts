@@ -410,6 +410,7 @@ export const getClassStats = query({
         absent: rangeDates.reduce((sum, entry) => sum + entry.summary.absent, 0),
         excused: rangeDates.reduce((sum, entry) => sum + entry.summary.excused, 0),
         activity: rangeDates.reduce((sum, entry) => sum + entry.summary.activity, 0),
+        unresolved: rangeDates.reduce((sum, entry) => sum + entry.summary.unresolved, 0),
         tardy: rangeDates.reduce((sum, entry) => sum + entry.summary.tardy, 0),
       },
       dates: rangeDates.sort((a, b) => b.date.localeCompare(a.date)),

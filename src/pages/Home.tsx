@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -39,18 +39,16 @@ export default function Home() {
     setSubmitted(true);
   }
 
-  // React to query result
-  if (submitted && loginResult !== undefined) {
+  useEffect(() => {
+    if (!submitted || loginResult === undefined) return;
     if (loginResult) {
-      // Match found — store and redirect
       setStoredStudentId(loginResult._id);
       navigate("/student");
-    } else if (loginResult === null) {
-      // No match
-      setSubmitted(false);
-      setLoginError("No account found. Check your email and ID, or register below.");
+      return;
     }
-  }
+    setSubmitted(false);
+    setLoginError("No account found. Check your email and ID, or register below.");
+  }, [submitted, loginResult, navigate]);
 
   function goToStudent() {
     const id = getStoredStudentId();
