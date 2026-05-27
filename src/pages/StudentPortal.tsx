@@ -12,8 +12,8 @@ export default function StudentPortal() {
   const storedId = getStoredStudentId();
 
   const student = useQuery(
-    api.students.getByStudentId,
-    storedId ? { studentId: storedId } : "skip"
+    api.students.getById,
+    storedId ? { id: storedId as Id<"students"> } : "skip"
   );
   const locations = useQuery(api.locations.list);
   const markPresent = useMutation(api.attendance.markPresent);
@@ -47,6 +47,12 @@ export default function StudentPortal() {
   useEffect(() => {
     if (!storedId) navigate("/onboarding");
   }, [storedId, navigate]);
+
+  useEffect(() => {
+    if (!storedId || student === undefined || student) return;
+    clearStoredStudentId();
+    navigate("/");
+  }, [storedId, student, navigate]);
 
   async function handleCheckIn() {
     if (!student || !locations) return;
@@ -136,19 +142,7 @@ export default function StudentPortal() {
   }
 
   if (student === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="card text-center max-w-sm w-full">
-          <p className="text-slate-600 mb-4">Student account not found.</p>
-          <button
-            onClick={() => { clearStoredStudentId(); navigate("/onboarding"); }}
-            className="btn-primary w-full"
-          >
-            Register
-          </button>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const bgColor =

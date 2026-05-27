@@ -12,7 +12,7 @@ import { isTutorialWelcomeDismissed, useTeacherTutorial } from "../hooks/useTeac
 
 type Tab = "attendance" | "classes" | "schedules" | "rooms" | "movement";
 type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
-type RosterFilter = "all" | "present" | "absent" | "excused" | "activity";
+type RosterFilter = "all" | "present" | "absent" | "excused" | "activity" | "tardy";
 type ManualStatus = "present" | "absent" | "excused";
 type AuthMode = "login" | "register";
 type BeaconScanState = "idle" | "scanning" | "connected" | "error";
@@ -115,6 +115,20 @@ function weekStart() {
 function todayWeekdayKey(): Weekday {
   const keys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   return (keys[new Date().getDay()] ?? "monday") as Weekday;
+}
+
+function friendlyConvexErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error) || !error.message) return fallback;
+
+  const explicitErrorMatch = error.message.match(/Uncaught Error:\s*([^\n]+)/);
+  if (explicitErrorMatch?.[1]) {
+    return explicitErrorMatch[1].trim();
+  }
+
+  const firstLine = error.message.split("\n")[0]?.trim();
+  if (!firstLine) return fallback;
+  if (firstLine.includes("[CONVEX")) return fallback;
+  return firstLine;
 }
 
 function fmt(ts: number) {
@@ -249,8 +263,14 @@ function AuthPanel({
   password,
   setPassword,
   error,
+  resetPasswordResult,
   onSubmit,
+  onForgotPasswordSubmit,
+  onCopyResetPassword,
+  showForgotPassword,
+  setShowForgotPassword,
   loading,
+  resetLoading,
 }: {
   mode: AuthMode;
   setMode: (mode: AuthMode) => void;
@@ -261,8 +281,14 @@ function AuthPanel({
   password: string;
   setPassword: (value: string) => void;
   error: string;
+  resetPasswordResult: { password: string; copied: boolean } | null;
   onSubmit: () => void;
+  onForgotPasswordSubmit: () => void;
+  onCopyResetPassword: () => void;
+  showForgotPassword: boolean;
+  setShowForgotPassword: (value: boolean) => void;
   loading: boolean;
+  resetLoading: boolean;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   return (
@@ -276,21 +302,28 @@ function AuthPanel({
             </p>
           </div>
 
-          <div className="mb-6 flex rounded-2xl bg-slate-100 p-1">
-            {(["login", "register"] as AuthMode[]).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setMode(value)}
-                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${ mode === value ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700" }`}
-              >
-                {value === "login" ? "Log In" : "Create Account"}
-              </button>
-            ))}
-          </div>
+          {!showForgotPassword && (
+            <div className="mb-6 flex rounded-2xl bg-slate-100 p-1">
+              {(["login", "register"] as AuthMode[]).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMode(value)}
+                  className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${ mode === value ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-700" }`}
+                >
+                  {value === "login" ? "Log In" : "Create Account"}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="space-y-4">
-            {mode === "register" && (
+            {showForgotPassword ? (
+              <div className="rounded-2xl border border-brand-200 bg-brand-100 px-4 py-3 text-sm font-medium leading-6 text-brand-950">
+                Enter your school email and a fresh 6-character temporary password will appear here for the teacher to copy.
+                They&apos;ll be prompted to choose a new password immediately after logging in.
+              </div>
+            ) : mode === "register" ? (
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Full Name</label>
                 <input
@@ -301,7 +334,7 @@ function AuthPanel({
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
-            )}
+            ) : null}
 
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">School Email</label>
@@ -319,40 +352,208 @@ function AuthPanel({
               </div>
             </div>
 
+            {!showForgotPassword && (
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-sm font-medium text-slate-700">Password</label>
+                  {mode === "login" && (
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPassword(true)}
+                      className="text-xs font-semibold text-brand-700 hover:text-brand-800"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="At least 6 characters"
+                    className="w-full rounded-xl border border-slate-300 pl-4 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 focus:outline-none"
+                  >
+                    {showPassword ? (
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 113.833 3.833M15.216 14.5a3 3 0 11-4.716-4.716" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18" />
+                      </svg>
+                    ) : (
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="rounded-xl border border-red-300 bg-red-100 px-4 py-3 text-sm font-semibold text-red-950">
+                {error}
+              </div>
+            )}
+
+            {resetPasswordResult && (
+              <div className="rounded-xl border border-emerald-300 bg-emerald-100 px-4 py-3 text-sm font-semibold text-emerald-950">
+                <p>A new temporary password is ready. Copy it and use it to sign in once.</p>
+                <div className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-300 bg-white px-3 py-2">
+                  <code className="flex-1 text-base font-bold tracking-[0.2em] text-slate-900">{resetPasswordResult.password}</code>
+                  <button
+                    type="button"
+                    onClick={onCopyResetPassword}
+                    className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white transition-colors hover:bg-emerald-800"
+                  >
+                    {resetPasswordResult.copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs font-medium text-emerald-900">
+                  This password changes every time you reset it and is always 6 characters long.
+                </p>
+              </div>
+            )}
+
+            {showForgotPassword ? (
+              <div className="space-y-3">
+                <button onClick={onForgotPasswordSubmit} disabled={resetLoading} className="btn-primary w-full disabled:opacity-50">
+                  {resetLoading ? "Resetting..." : "Reset Password"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(false)}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-800"
+                >
+                  Back to Login
+                </button>
+              </div>
+            ) : (
+              <button onClick={onSubmit} disabled={loading} className="btn-primary w-full disabled:opacity-50">
+                {loading ? "Working..." : mode === "login" ? "Log In" : "Create Teacher Account"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ForcePasswordChangePanel({
+  teacherName,
+  teacherEmail,
+  currentPassword,
+  setCurrentPassword,
+  newPassword,
+  setNewPassword,
+  confirmPassword,
+  setConfirmPassword,
+  error,
+  onSubmit,
+  onLogout,
+  loading,
+}: {
+  teacherName: string;
+  teacherEmail: string;
+  currentPassword: string;
+  setCurrentPassword: (value: string) => void;
+  newPassword: string;
+  setNewPassword: (value: string) => void;
+  confirmPassword: string;
+  setConfirmPassword: (value: string) => void;
+  error: string;
+  onSubmit: () => void;
+  onLogout: () => void;
+  loading: boolean;
+}) {
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  return (
+    <div className="min-h-screen bg-slate-100 px-4 py-12">
+      <div className="mx-auto max-w-md">
+        <div className="rounded-3xl bg-white p-8 shadow-xl shadow-slate-200/70">
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold text-slate-900">Choose a New Password</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              {teacherName} ({teacherEmail}) must replace the temporary school password before entering the teacher workspace.
+            </p>
+          </div>
+
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Use the temporary reset password as your current password, then create a new password with at least 6 characters.
+          </div>
+
+          <div className="space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Password</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Current Password</label>
               <div className="relative">
                 <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="At least 6 characters"
-                  className="w-full rounded-xl border border-slate-300 pl-4 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  type={showCurrentPassword ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 pl-4 pr-14 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 focus:outline-none"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-xs font-semibold text-slate-400 hover:text-slate-600"
                 >
-                  {showPassword ? (
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 113.833 3.833M15.216 14.5a3 3 0 11-4.716-4.716" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18" />
-                    </svg>
-                  ) : (
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
+                  {showCurrentPassword ? "Hide" : "Show"}
                 </button>
               </div>
             </div>
 
-            {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">New Password</label>
+              <div className="relative">
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 pl-4 pr-14 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-xs font-semibold text-slate-400 hover:text-slate-600"
+                >
+                  {showNewPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Confirm New Password</label>
+              <input
+                type={showNewPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-xl border border-red-300 bg-red-100 px-4 py-3 text-sm font-semibold text-red-950">
+                {error}
+              </div>
+            )}
 
             <button onClick={onSubmit} disabled={loading} className="btn-primary w-full disabled:opacity-50">
-              {loading ? "Working..." : mode === "login" ? "Log In" : "Create Teacher Account"}
+              {loading ? "Saving..." : "Update Password"}
+            </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-800"
+            >
+              Log Out
             </button>
           </div>
         </div>
@@ -377,8 +578,16 @@ export default function TeacherDashboard() {
   const [authEmailPrefix, setAuthEmailPrefix] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [resetPasswordResult, setResetPasswordResult] = useState<{ password: string; copied: boolean } | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [loginSubmitted, setLoginSubmitted] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isResettingTeacherPassword, setIsResettingTeacherPassword] = useState(false);
+  const [currentTeacherPassword, setCurrentTeacherPassword] = useState("");
+  const [replacementTeacherPassword, setReplacementTeacherPassword] = useState("");
+  const [confirmReplacementTeacherPassword, setConfirmReplacementTeacherPassword] = useState("");
+  const [teacherPasswordUpdateError, setTeacherPasswordUpdateError] = useState("");
+  const [isUpdatingTeacherPassword, setIsUpdatingTeacherPassword] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<Id<"teacherClasses"> | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<Id<"students"> | null>(null);
   const [attendanceLookupOpen, setAttendanceLookupOpen] = useState(false);
@@ -485,7 +694,7 @@ export default function TeacherDashboard() {
       : "skip",
   );
   const teacherProfile = useQuery(api.teachers.getById, teacherId ? { teacherId } : "skip");
-  const authenticatedTeacherId = teacherProfile ? teacherId : null;
+  const authenticatedTeacherId = teacherProfile && !teacherProfile.mustChangePassword ? teacherId : null;
   const allStudents = useQuery(api.students.list) ?? [];
   const teacherClasses = useQuery(
     api.teacherClasses.listForTeacher,
@@ -538,6 +747,7 @@ export default function TeacherDashboard() {
   ) ?? [];
 
   const registerTeacher = useMutation(api.teachers.register);
+  const changeTeacherPassword = useMutation(api.teachers.changeOwnPassword);
   const markTutorialComplete = useMutation(api.teachers.markTutorialComplete);
   const createTeacherClass = useMutation(api.teacherClasses.create);
   const updateTeacherClass = useMutation(api.teacherClasses.update);
@@ -571,6 +781,7 @@ export default function TeacherDashboard() {
   const setWeekMap = useMutation(api.weekDayMapping.setWeek);
   const upsertLocation = useMutation(api.locations.upsert);
   const removeLocation = useMutation(api.locations.remove);
+  const requestTeacherPasswordReset = useAction(api.teachers.requestPasswordReset);
 
   const [taggedStudentIds, setTaggedStudentIds] = useState<Id<"students">[]>([]);
   const [newOfficeEmail, setNewOfficeEmail] = useState("");
@@ -631,12 +842,20 @@ export default function TeacherDashboard() {
       setStoredTeacherId(loginResult._id);
       setTeacherId(loginResult._id);
       setAuthError("");
-      setAuthPassword("");
+      setResetPasswordResult(null);
+      setCurrentTeacherPassword(authPassword);
+      setReplacementTeacherPassword("");
+      setConfirmReplacementTeacherPassword("");
+      setTeacherPasswordUpdateError("");
+      if (!loginResult.mustChangePassword) {
+        setAuthPassword("");
+      }
     } else {
-      setAuthError("We couldn't find a matching teacher account.");
+      setAuthError("Incorrect school email or password.");
+      setResetPasswordResult(null);
     }
     setLoginSubmitted(false);
-  }, [loginResult, loginSubmitted]);
+  }, [authPassword, loginResult, loginSubmitted]);
 
   useEffect(() => {
     if (teacherId && teacherProfile === null) {
@@ -886,6 +1105,7 @@ export default function TeacherDashboard() {
       if (rosterFilter === "absent") return row.status === "absent";
       if (rosterFilter === "excused") return row.status === "excused";
       if (rosterFilter === "activity") return row.status === "activity";
+      if (rosterFilter === "tardy") return row.isLateToday;
       return true;
     });
   }, [rosterFilter, rosterSearch, teacherRoster?.students]);
@@ -950,6 +1170,7 @@ export default function TeacherDashboard() {
 
   async function handleTeacherSubmit() {
     setAuthError("");
+    setResetPasswordResult(null);
     if (!teacherEmail || !authPassword || (authMode === "register" && !authName.trim())) {
       setAuthError("Please complete the required fields.");
       return;
@@ -970,11 +1191,80 @@ export default function TeacherDashboard() {
       setStoredTeacherId(teacher._id);
       setTeacherId(teacher._id);
       setAuthPassword("");
+      setResetPasswordResult(null);
       setPendingTutorialWelcome(true);
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Could not create teacher account.");
+      setAuthError(friendlyConvexErrorMessage(error, "Could not create teacher account."));
     } finally {
       setIsRegistering(false);
+    }
+  }
+
+  async function handleTeacherPasswordResetRequest() {
+    setAuthError("");
+    setResetPasswordResult(null);
+    if (!teacherEmail) {
+      setAuthError("Enter your school email.");
+      return;
+    }
+
+    try {
+      setIsResettingTeacherPassword(true);
+      const result = await requestTeacherPasswordReset({ email: teacherEmail });
+      if (!result.success || !result.temporaryPassword) {
+        setAuthError("We couldn't find a matching teacher account.");
+        return;
+      }
+      setAuthPassword("");
+      setResetPasswordResult({ password: result.temporaryPassword, copied: false });
+    } catch (error) {
+      setAuthError(friendlyConvexErrorMessage(error, "Could not reset that teacher account."));
+    } finally {
+      setIsResettingTeacherPassword(false);
+    }
+  }
+
+  async function handleCopyResetTeacherPassword() {
+    if (!resetPasswordResult) return;
+    try {
+      await navigator.clipboard.writeText(resetPasswordResult.password);
+      setResetPasswordResult({ ...resetPasswordResult, copied: true });
+    } catch {
+      setAuthError("Could not copy the temporary password. Copy it manually instead.");
+    }
+  }
+
+  async function handleRequiredTeacherPasswordChange() {
+    setTeacherPasswordUpdateError("");
+    if (!teacherId) {
+      setTeacherPasswordUpdateError("Teacher account is unavailable. Log in again.");
+      return;
+    }
+    if (!currentTeacherPassword || !replacementTeacherPassword || !confirmReplacementTeacherPassword) {
+      setTeacherPasswordUpdateError("Please complete all password fields.");
+      return;
+    }
+    if (replacementTeacherPassword !== confirmReplacementTeacherPassword) {
+      setTeacherPasswordUpdateError("New passwords do not match.");
+      return;
+    }
+
+    try {
+      setIsUpdatingTeacherPassword(true);
+      await changeTeacherPassword({
+        teacherId,
+        currentPassword: currentTeacherPassword,
+        newPassword: replacementTeacherPassword,
+      });
+      setAuthPassword("");
+      setCurrentTeacherPassword("");
+      setReplacementTeacherPassword("");
+      setConfirmReplacementTeacherPassword("");
+      setTeacherPasswordUpdateError("");
+    } catch (error) {
+      setTeacherPasswordUpdateError(friendlyConvexErrorMessage(error, "Could not update teacher password."));
+    } finally {
+      setIsUpdatingTeacherPassword(false);
     }
   }
 
@@ -983,6 +1273,12 @@ export default function TeacherDashboard() {
     setTeacherId(null);
     setAuthPassword("");
     setAuthError("");
+    setResetPasswordResult(null);
+    setShowForgotPassword(false);
+    setCurrentTeacherPassword("");
+    setReplacementTeacherPassword("");
+    setConfirmReplacementTeacherPassword("");
+    setTeacherPasswordUpdateError("");
   }
 
   function openWeekForm() {
@@ -3163,6 +3459,34 @@ export default function TeacherDashboard() {
     );
   }
 
+  if (teacherProfile?.mustChangePassword && teacherId) {
+    return (
+      <ForcePasswordChangePanel
+        teacherName={teacherProfile.name}
+        teacherEmail={teacherProfile.email}
+        currentPassword={currentTeacherPassword}
+        setCurrentPassword={(value) => {
+          setCurrentTeacherPassword(value);
+          setTeacherPasswordUpdateError("");
+        }}
+        newPassword={replacementTeacherPassword}
+        setNewPassword={(value) => {
+          setReplacementTeacherPassword(value);
+          setTeacherPasswordUpdateError("");
+        }}
+        confirmPassword={confirmReplacementTeacherPassword}
+        setConfirmPassword={(value) => {
+          setConfirmReplacementTeacherPassword(value);
+          setTeacherPasswordUpdateError("");
+        }}
+        error={teacherPasswordUpdateError}
+        onSubmit={handleRequiredTeacherPasswordChange}
+        onLogout={handleLogout}
+        loading={isUpdatingTeacherPassword}
+      />
+    );
+  }
+
   if (!authenticatedTeacherId || teacherProfile === undefined) {
     return (
       <AuthPanel
@@ -3170,6 +3494,7 @@ export default function TeacherDashboard() {
         setMode={(mode) => {
           setAuthMode(mode);
           setAuthError("");
+          setResetPasswordResult(null);
           setLoginSubmitted(false);
         }}
         name={authName}
@@ -3178,17 +3503,29 @@ export default function TeacherDashboard() {
         setEmailPrefix={(value) => {
           setAuthEmailPrefix(value);
           setAuthError("");
+          setResetPasswordResult(null);
           setLoginSubmitted(false);
         }}
         password={authPassword}
         setPassword={(value) => {
           setAuthPassword(value);
           setAuthError("");
+          setResetPasswordResult(null);
           setLoginSubmitted(false);
         }}
         error={authError}
+        resetPasswordResult={resetPasswordResult}
         onSubmit={handleTeacherSubmit}
+        onForgotPasswordSubmit={handleTeacherPasswordResetRequest}
+        onCopyResetPassword={handleCopyResetTeacherPassword}
+        showForgotPassword={showForgotPassword}
+        setShowForgotPassword={(value) => {
+          setShowForgotPassword(value);
+          setAuthError("");
+          setResetPasswordResult(null);
+        }}
         loading={loginSubmitted || isRegistering}
+        resetLoading={isResettingTeacherPassword}
       />
     );
   }
@@ -3670,7 +4007,7 @@ export default function TeacherDashboard() {
                         className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                       />
                       <div className="flex flex-wrap gap-2">
-                        {(["all", "present", "absent", "excused", "activity"] as RosterFilter[]).map((filter) => (
+                        {(["all", "present", "absent", "excused", "activity", "tardy"] as RosterFilter[]).map((filter) => (
                           <button
                             key={filter}
                             onClick={() => setRosterFilter(filter)}
@@ -3680,11 +4017,13 @@ export default function TeacherDashboard() {
                               ? "All"
                               : filter === "present"
                                 ? "Present"
-                                : filter === "absent"
+                              : filter === "absent"
                                   ? "Absent"
                                   : filter === "excused"
                                     ? "Excused"
-                                    : "Activity"}
+                                    : filter === "activity"
+                                      ? "Activity"
+                                      : "Tardy"}
                           </button>
                         ))}
                       </div>

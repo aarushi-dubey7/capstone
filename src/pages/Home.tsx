@@ -43,7 +43,7 @@ export default function Home() {
   if (submitted && loginResult !== undefined) {
     if (loginResult) {
       // Match found — store and redirect
-      setStoredStudentId(loginResult.studentId);
+      setStoredStudentId(loginResult._id);
       navigate("/student");
     } else if (loginResult === null) {
       // No match

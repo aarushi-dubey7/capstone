@@ -1,8 +1,12 @@
-import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { action, internalMutation, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 const SCHOOL_EMAIL_SUFFIX = "@bhpsnj.org";
+const MIN_TEACHER_PASSWORD_LENGTH = 6;
+const TEMP_TEACHER_PASSWORD_LENGTH = 6;
+const TEMP_TEACHER_PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 
 async function hashPassword(password: string) {
   const bytes = new TextEncoder().encode(password);
@@ -22,6 +26,17 @@ function validateTeacherEmail(email: string) {
   }
 }
 
+function validateTeacherPassword(password: string) {
+  if (password.trim().length < MIN_TEACHER_PASSWORD_LENGTH) {
+    throw new Error(`Password must be at least ${MIN_TEACHER_PASSWORD_LENGTH} characters.`);
+  }
+}
+
+function generateTemporaryTeacherPassword() {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(TEMP_TEACHER_PASSWORD_LENGTH));
+  return Array.from(randomBytes, (byte) => TEMP_TEACHER_PASSWORD_ALPHABET[byte % TEMP_TEACHER_PASSWORD_ALPHABET.length]).join("");
+}
+
 export const register = mutation({
   args: {
     name: v.string(),
@@ -31,9 +46,7 @@ export const register = mutation({
   handler: async (ctx, args) => {
     const email = normalizeTeacherEmail(args.email);
     validateTeacherEmail(email);
-    if (args.password.trim().length < 6) {
-      throw new Error("Password must be at least 6 characters.");
-    }
+    validateTeacherPassword(args.password);
 
     const existing = await ctx.db
       .query("teachers")
@@ -48,6 +61,7 @@ export const register = mutation({
       email,
       passwordHash: await hashPassword(args.password),
       createdAt: Date.now(),
+      mustChangePassword: false,
     });
 
     return {
@@ -55,6 +69,7 @@ export const register = mutation({
       name: args.name.trim(),
       email,
       tutorialCompletedAt: undefined,
+      mustChangePassword: false,
     };
   },
 });
@@ -109,6 +124,86 @@ export const login = query({
       email: teacher.email,
       createdAt: teacher.createdAt,
       tutorialCompletedAt: teacher.tutorialCompletedAt,
+      mustChangePassword: teacher.mustChangePassword,
+    };
+  },
+});
+
+export const applyPasswordResetByEmail = internalMutation({
+  args: {
+    email: v.string(),
+    passwordHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const teacher = await ctx.db
+      .query("teachers")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+    if (!teacher) {
+      return { found: false };
+    }
+
+    await ctx.db.patch(teacher._id, {
+      passwordHash: args.passwordHash,
+      mustChangePassword: true,
+    });
+
+    return { found: true };
+  },
+});
+
+export const requestPasswordReset = action({
+  args: {
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const email = normalizeTeacherEmail(args.email);
+    validateTeacherEmail(email);
+
+    const temporaryPassword = generateTemporaryTeacherPassword();
+    const passwordHash = await hashPassword(temporaryPassword);
+    const result: { found: boolean } = await ctx.runMutation(internal.teachers.applyPasswordResetByEmail, {
+      email,
+      passwordHash,
+    });
+    if (!result.found) {
+      return { success: false, temporaryPassword: null };
+    }
+    return { success: true, temporaryPassword };
+  },
+});
+
+export const changeOwnPassword = mutation({
+  args: {
+    teacherId: v.id("teachers"),
+    currentPassword: v.string(),
+    newPassword: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const teacher = await ctx.db.get(args.teacherId);
+    if (!teacher) {
+      throw new Error("Teacher not found.");
+    }
+
+    const currentPasswordHash = await hashPassword(args.currentPassword);
+    if (teacher.passwordHash !== currentPasswordHash) {
+      throw new Error("Current password is incorrect.");
+    }
+
+    validateTeacherPassword(args.newPassword);
+
+    await ctx.db.patch(args.teacherId, {
+      passwordHash: await hashPassword(args.newPassword),
+      mustChangePassword: false,
+    });
+
+    return {
+      _id: teacher._id,
+      name: teacher.name,
+      email: teacher.email,
+      createdAt: teacher.createdAt,
+      tutorialCompletedAt: teacher.tutorialCompletedAt,
+      mustChangePassword: false,
     };
   },
 });
@@ -125,6 +220,7 @@ export const getById = query({
         email: teacher.email,
         createdAt: teacher.createdAt,
         tutorialCompletedAt: teacher.tutorialCompletedAt,
+        mustChangePassword: teacher.mustChangePassword,
       };
     } catch {
       return null;

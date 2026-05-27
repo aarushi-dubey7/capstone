@@ -31,10 +31,20 @@ export default function Onboarding() {
     }
 
     const email = `${emailPrefix.trim().toLowerCase()}@bhpsnj.org`;
-    await registerStudent({ name: name.trim(), studentId: trimmedStudentId, email, role: "student", grade });
-    setStoredStudentId(trimmedStudentId);
-    setError("");
-    setDone(true);
+    try {
+      const registeredStudentId = await registerStudent({
+        name: name.trim(),
+        studentId: trimmedStudentId,
+        email,
+        role: "student",
+        grade,
+      });
+      setStoredStudentId(registeredStudentId);
+      setError("");
+      setDone(true);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not create account.");
+    }
   }
 
   const stepLabels = ["Your Info", "Done"];

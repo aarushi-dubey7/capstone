@@ -61,6 +61,7 @@ Set the Groq key in Convex with:
 npx convex env set GROQ_API_KEY=gsk_...
 ```
 
+
 ### 3. Start Convex
 
 For local/dev deployment sync:

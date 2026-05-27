@@ -62,12 +62,33 @@ export const register = mutation({
     const studentId = normalizeStudentId(args.studentId);
     assertStudentIdLength(studentId);
 
-    const existing = await ctx.db
+    const existingPasswordOwner = await ctx.db
       .query("students")
       .withIndex("by_studentId", (q) => q.eq("studentId", studentId))
       .first();
-    if (existing) return existing._id;
+
+    if (existingPasswordOwner) {
+      const sameEmail =
+        !!args.email &&
+        !!existingPasswordOwner.email &&
+        existingPasswordOwner.email.toLowerCase() === args.email.toLowerCase();
+      const sameName = existingPasswordOwner.name.trim().toLowerCase() === args.name.trim().toLowerCase();
+
+      if (sameEmail || sameName) {
+        return existingPasswordOwner._id;
+      }
+
+      throw new Error("That password is already used by another student.");
+    }
+
     return ctx.db.insert("students", { ...args, studentId, createdAt: Date.now() });
+  },
+});
+
+export const getById = query({
+  args: { id: v.id("students") },
+  handler: async (ctx, { id }) => {
+    return ctx.db.get(id);
   },
 });
 
