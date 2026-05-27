@@ -2337,7 +2337,7 @@ export default function TeacherDashboard() {
               value={rosterTextInput}
               onChange={(event) => setRosterTextInput(event.target.value)}
               rows={5}
-              placeholder={"Aarushi Dubey\nDavi Example\nBig Beta"}
+              placeholder={"Student Name 1\nStudent Name 2\nStudent Name 3"}
               className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
             <button onClick={handleParseRosterText} className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700">
