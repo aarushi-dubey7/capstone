@@ -43,7 +43,7 @@ install:
 help:
 	@echo "make f       — start Vite dev server"
 	@echo "make b       — start Convex dev backend"
-	@echo "make flash   — compile & flash hardware/beacon/beacon.ino to $(PORT)"
+	@echo "make flash   — compile & flash the ESP32 beacon project in hardware/beacon to $(PORT)"
 	@echo "make deploy  — deploy Convex + build frontend for GitHub Pages"
 	@echo "make install — npm install"
 	@echo ""

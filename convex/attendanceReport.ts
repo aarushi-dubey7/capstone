@@ -2,6 +2,8 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 
+declare const process: { env: Record<string, string | undefined> };
+
 export const sendToMainOffice = action({
   args: {
     teacherId: v.id("teachers"),
@@ -62,7 +64,6 @@ export const sendToMainOffice = action({
       </div>
     `;
 
-    // @ts-ignore
     const resendApiKey = process.env.RESEND_API_KEY;
     if (!resendApiKey) {
       throw new Error("RESEND_API_KEY is not set.");
