@@ -8,6 +8,11 @@ This repository contains a school attendance platform built around three core id
 
 The app is already usable, but it also contains a few partial or future-facing systems. This README is meant to help the next collaborators understand what is live today, what is experimental, and where to extend the system safely.
 
+
+Architecture: https://deepwiki.com/aarushi-dubey7/capstone/2.3.2-attendance-notifications-and-settings-panels
+
+Site: aarushi-dubey7.github.io/capstone/
+
 ## What The System Actually Does
 
 At a high level:
