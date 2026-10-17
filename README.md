@@ -13,6 +13,7 @@ Architecture: https://deepwiki.com/aarushi-dubey7/capstone/2.3.2-attendance-noti
 
 Site: aarushi-dubey7.github.io/capstone/
 
+
 ## What The System Actually Does
 
 At a high level:
